@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/Saif724/STAQ/backend/internal/config"
+	"github.com/Saif724/STAQ/backend/internal/logger"
 )
 
 func main() {
@@ -14,4 +15,12 @@ func main() {
 	}
 
 	fmt.Println(cfg.App.Env)
+
+	logg := logger.New(logger.Config{
+		Environment: cfg.App.Env,
+	})
+
+	logg.Info().
+		Str("module", "main").
+		Msg("Logger initialized successfully")
 }
