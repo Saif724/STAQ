@@ -14,6 +14,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/database"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	"github.com/Saif724/STAQ/backend/internal/logger"
+	"github.com/Saif724/STAQ/backend/internal/router"
 )
 
 func main() {
@@ -64,13 +65,11 @@ func main() {
 
 	healthHandler := health.NewHandler(db, redisClient)
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/health", healthHandler.Check)
+	handler := router.New(healthHandler, logg)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.App.Port,
-		Handler: mux,
+		Handler: handler,
 	}
 
 	logg.Info().
