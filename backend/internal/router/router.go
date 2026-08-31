@@ -13,7 +13,9 @@ func New(healthHandler *health.Handler,logg zerolog.Logger) http.Handler {
 
 	mux.HandleFunc("/health", healthHandler.Check)
 
-	handler := middleware.Logger(logg)(mux)
+	handler := middleware.RequestID(
+		middleware.Logger(logg)(mux),
+	)
 
 	return handler
 }
