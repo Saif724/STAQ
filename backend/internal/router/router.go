@@ -8,13 +8,21 @@ import (
 	"github.com/rs/zerolog"
 )
 
-func New(healthHandler *health.Handler,logg zerolog.Logger) http.Handler {
+func New(
+	healthHandler *health.Handler,
+	logg zerolog.Logger,
+	frontendURL string,
+) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", healthHandler.Check)
 
-	handler := middleware.RequestID(
-		middleware.Logger(logg)(mux),
+	handler := middleware.Recovery(logg)(
+		middleware.CORS(frontendURL)(
+			middleware.RequestID(
+				middleware.Logger(logg)(mux),
+			),
+		),
 	)
 
 	return handler

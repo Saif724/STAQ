@@ -65,11 +65,14 @@ func main() {
 
 	healthHandler := health.NewHandler(db, redisClient)
 
-	handler := router.New(healthHandler, logg)
+	handler := router.New(healthHandler, logg, cfg.App.FrontendURL)
 
 	server := &http.Server{
 		Addr:    ":" + cfg.App.Port,
 		Handler: handler,
+		ReadTimeout: 10 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout: 60 * time.Second,
 	}
 
 	logg.Info().
@@ -111,9 +114,13 @@ func main() {
 		logg.Error().
 			Err(err).
 			Msg("HTTP server shutdown failed")
+	} else {
+		logg.Info().
+			Str("module", "mail").
+			Msg("HTTP server shutdown complete")
 	}
 
 	logg.Info().
-		Str("module", "mail").
+		Str("module", "main").
 		Msg("STAQ shutdown complete")
 }
