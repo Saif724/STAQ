@@ -53,3 +53,30 @@ func TestDifferentHashesForSamePassword(t *testing.T) {
 		t.Fatal("same password produced identical hashes")
 	}
 }
+
+func TestHashPasswordEmpty(t *testing.T) {
+	_, err := HashPassword("")
+
+	if err == nil {
+		t.Fatal("expected error for empty password")
+	}
+}
+
+func TestComparePasswordMalformedHash(t *testing.T) {
+	tests := []string{
+		"",
+		"invalid",
+		"$bcrypt$v=19$m=65536,t=3,p=2$salt$hash",
+		"$argon2id$v=18$m=65536,t=3,p=2$salt$hash",
+		"$argon2id$v=19$invalid$salt$hash",
+		"$argon2id$v=19$m=0,t=3,p=2$salt$hash",
+	}
+
+	for _, encodedHash := range tests {
+		t.Run(encodedHash, func(t *testing.T) {
+			if ComparePassword("password", encodedHash) {
+				t.Fatal("malformed hash was accepted")
+			}
+		})
+	}
+}

@@ -2,19 +2,21 @@ package hash
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
 
 const (
-	memory      = 64 * 1024
-	iterations  = 3
-	parallelism = 2
-	keyLength   = 32
-	saltLength  = 16
+	memory      uint32 = 64 * 1024
+	iterations  uint32 = 3
+	parallelism uint8  = 2
+	keyLength   uint32 = 32
+	saltLength         = 16
 )
 
 func HashPassword(password string) (string, error) {
@@ -53,7 +55,7 @@ func HashPassword(password string) (string, error) {
 func ComparePassword(password, encodedHash string) bool {
 	parts := strings.Split(encodedHash, "$")
 
-	if len(parts) != 6 {
+	if len(parts) != 6 || parts[0] != "" {
 		return false
 	}
 
@@ -61,24 +63,54 @@ func ComparePassword(password, encodedHash string) bool {
 		return false
 	}
 
-	var memory uint32
-	var iterations uint32
-	var parallelism uint8
-
-	if _, err := fmt.Sscanf(
-		parts[2],
-		"v=19",
-	); err != nil {
+	if parts[2] != "v=19" {
 		return false
 	}
 
-	if _, err := fmt.Sscanf(
-		parts[3],
-		"m=%d,t=%d,p=%d",
-		&memory,
-		&iterations,
-		&parallelism,
-	); err != nil {
+	params := strings.Split(parts[3], ",")
+
+	if len(params) != 3 {
+		return false
+	}
+
+	var (
+		memoryCost uint32
+		timeCost   uint32
+		threads    uint8
+	)
+
+	for _, param := range params {
+		parts := strings.SplitN(param, "=", 2)
+
+		if len(parts) != 2 {
+			return false
+		}
+
+		value, err := strconv.ParseUint(parts[1], 10, 32)
+		if err != nil {
+			return false
+		}
+
+		switch parts[0] {
+		case "m":
+			memoryCost = uint32(value)
+
+		case "t":
+			timeCost = uint32(value)
+
+		case "p":
+			if value > 255 {
+				return false
+			}
+
+			threads = uint8(value)
+
+		default:
+			return false
+		}
+	}
+
+	if memoryCost == 0 || timeCost == 0 || threads == 0 {
 		return false
 	}
 
@@ -92,7 +124,6 @@ func ComparePassword(password, encodedHash string) bool {
 		return false
 	}
 
-
 	actualHash := argon2.IDKey(
 		[]byte(password),
 		salt,
@@ -102,15 +133,5 @@ func ComparePassword(password, encodedHash string) bool {
 		uint32(len(expectedHash)),
 	)
 
-	if len(actualHash) != len(expectedHash) {
-		return false
-	}
-
-	var difference byte
-
-	for i := range actualHash {
-		difference |= actualHash[i] ^ expectedHash[i]
-	}
-
-	return difference == 0
+	return subtle.ConstantTimeCompare(actualHash, expectedHash) == 1
 }
