@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -56,6 +57,11 @@ func (r *Repository) Create(
 	)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
+
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrEmailExists
+		}
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
@@ -77,7 +83,7 @@ func (r *Repository) FindByID(
 			created_at,
 			updated_at
 		FROM users
-		WHERE id=&1
+		WHERE id=$1
 	`
 
 	user := &User{}
@@ -119,7 +125,7 @@ func (r *Repository) FindByEmail(
 			created_at,
 			updated_at
 		FROM users
-		WHERE email=&1
+		WHERE email=$1
 	`
 
 	user := &User{}

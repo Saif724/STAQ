@@ -9,12 +9,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/broker"
 	"github.com/Saif724/STAQ/backend/internal/config"
 	"github.com/Saif724/STAQ/backend/internal/database"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	"github.com/Saif724/STAQ/backend/internal/logger"
 	"github.com/Saif724/STAQ/backend/internal/router"
+	"github.com/Saif724/STAQ/backend/internal/users"
 )
 
 func main() {
@@ -63,16 +65,22 @@ func main() {
 		Str("module", "redis").
 		Msg("Redis connection established")
 
+	userRepository := users.NewRepository(db)
+	usersService := users.NewService(userRepository)
+
+	authService := auth.NewService(usersService)
+	authHandler := auth.NewHandler(authService)
+
 	healthHandler := health.NewHandler(db, redisClient)
 
-	handler := router.New(healthHandler, logg, cfg.App.FrontendURL)
+	handler := router.New(healthHandler, authHandler, logg, cfg.App.FrontendURL)
 
 	server := &http.Server{
-		Addr:    ":" + cfg.App.Port,
-		Handler: handler,
-		ReadTimeout: 10 * time.Second,
+		Addr:         ":" + cfg.App.Port,
+		Handler:      handler,
+		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		IdleTimeout: 60 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	logg.Info().

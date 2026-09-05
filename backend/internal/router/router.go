@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 
+	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
 	"github.com/rs/zerolog"
@@ -10,20 +11,20 @@ import (
 
 func New(
 	healthHandler *health.Handler,
+	authHandler *auth.Handler,
 	logg zerolog.Logger,
 	frontendURL string,
 ) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", healthHandler.Check)
+	mux.HandleFunc("/auth/register", authHandler.Register)
 
-	handler := middleware.Recovery(logg)(
-		middleware.CORS(frontendURL)(
-			middleware.RequestID(
-				middleware.Logger(logg)(mux),
-			),
-		),
+	return middleware.Chain(
+		mux,
+		middleware.Recovery(logg),
+		middleware.CORS(frontendURL),
+		middleware.RequestID,
+		middleware.Logger(logg),
 	)
-
-	return handler
 }
