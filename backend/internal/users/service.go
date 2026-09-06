@@ -86,7 +86,7 @@ func (s *Service) GetByEmail(
 	email = strings.ToLower(strings.TrimSpace(email))
 
 	if email == "" {
-		return nil, fmt.Errorf("eamil is required")
+		return nil, fmt.Errorf("email is required")
 	}
 
 	return s.repository.FindByEmail(ctx, email)

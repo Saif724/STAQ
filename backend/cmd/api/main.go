@@ -17,6 +17,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/logger"
 	"github.com/Saif724/STAQ/backend/internal/router"
 	"github.com/Saif724/STAQ/backend/internal/users"
+	"github.com/Saif724/STAQ/backend/pkg/jwt"
 )
 
 func main() {
@@ -68,7 +69,8 @@ func main() {
 	userRepository := users.NewRepository(db)
 	usersService := users.NewService(userRepository)
 
-	authService := auth.NewService(usersService)
+	jwtManager := jwt.NewManager(cfg.JWT.Secret)
+	authService := auth.NewService(usersService, jwtManager)
 	authHandler := auth.NewHandler(authService)
 
 	healthHandler := health.NewHandler(db, redisClient)

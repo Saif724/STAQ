@@ -2,10 +2,12 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/Saif724/STAQ/backend/internal/auth/dto"
 	"github.com/Saif724/STAQ/backend/internal/shared/response"
+	"github.com/Saif724/STAQ/backend/internal/users"
 )
 
 type Handler struct {
@@ -29,6 +31,15 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.Register(r.Context(), req)
 
 	if err != nil {
+		if errors.Is(err, users.ErrEmailExists) {
+			response.ErrorJSON(
+				w,
+				http.StatusConflict,
+				"EMAIL_EXISTS",
+				"an account with this email already exists",
+			)
+			return
+		}
 		response.ErrorJSON(w, http.StatusBadRequest, "REGISTRATION_FAILED", err.Error())
 		return
 	}
