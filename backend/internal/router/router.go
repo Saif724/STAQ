@@ -19,6 +19,7 @@ func New(
 
 	mux.HandleFunc("/health", healthHandler.Check)
 	mux.HandleFunc("/auth/register", authHandler.Register)
+	mux.HandleFunc("/auth/login", authHandler.Login)
 
 	return middleware.Chain(
 		mux,

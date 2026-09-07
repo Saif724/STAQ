@@ -46,3 +46,58 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusCreated, result)
 }
+
+func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	var req dto.LoginRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"invalid request body",
+		)
+
+		return
+	}
+
+	result, err := h.service.Login(r.Context(), req)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidCredentials):
+			response.ErrorJSON(
+				w, http.StatusUnauthorized,
+				"INVALID_CREDENTIALS",
+				"invalid email or password",
+			)
+
+		case errors.Is(err, ErrAccountInactive):
+			response.ErrorJSON(
+				w,
+				http.StatusForbidden,
+				"ACCOUNT_INACTIVE",
+				"account is inactive",
+			)
+
+		case errors.Is(err, ErrEamilNotVerified):
+			response.ErrorJSON(
+				w,
+				http.StatusForbidden,
+				"EMAIL_NOT_VERIFIED",
+				"email is not verified",
+			)
+
+		default:
+			response.ErrorJSON(
+				w,
+				http.StatusBadRequest,
+				"LOGIN_FAILED",
+				"login failed",
+			)
+		}
+		return
+	}
+
+	response.JSON(w, http.StatusOK, result)
+}
