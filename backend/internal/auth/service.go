@@ -12,20 +12,28 @@ import (
 )
 
 var (
-	ErrInvalidCredentials = errors.New("invalid email or password")
-	ErrAccountInactive    = errors.New("account is inactive")
-	ErrEamilNotVerified   = errors.New("email not verified")
+	ErrInvalidCredentials   = errors.New("invalid email or password")
+	ErrAccountInactive      = errors.New("account is inactive")
+	ErrEamilNotVerified     = errors.New("email not verified")
+	ErrRefreshTokenNotFound = errors.New("refresh token not found")
+	ErrInvalidRefreshToken  = errors.New("invalid refresh token")
 )
 
 type Service struct {
-	usersService *users.Service
-	jwtManager   *jwt.Manager
+	usersService           *users.Service
+	jwtManager             *jwt.Manager
+	refreshTokenRepository *RefreshTokenRepository
 }
 
-func NewService(usersService *users.Service, jwtManager *jwt.Manager) *Service {
+func NewService(
+	usersService *users.Service,
+	jwtManager *jwt.Manager,
+	refreshTokenRepository *RefreshTokenRepository,
+) *Service {
 	return &Service{
-		usersService: usersService,
-		jwtManager:   jwtManager,
+		usersService:           usersService,
+		jwtManager:             jwtManager,
+		refreshTokenRepository: refreshTokenRepository,
 	}
 }
 
@@ -101,7 +109,13 @@ func (s *Service) Login(
 		return nil, fmt.Errorf("login failed: %w", err)
 	}
 
+	refreshToken, err := s.createRefreshToken(ctx, user.ID)
+	if err != nil {
+		return nil, fmt.Errorf("login failed: %w", err)
+	}
+
 	return &dto.LoginResponse{
-		AccessToken: accessToken,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 	}, nil
 }

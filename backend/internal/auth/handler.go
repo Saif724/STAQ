@@ -101,3 +101,44 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	response.JSON(w, http.StatusOK, result)
 }
+
+func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req dto.RefreshRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"invalid request body",
+		)
+		return
+	}
+
+	result, err := h.service.RefreshAccessToken(
+		r.Context(),
+		req.RefreshToken,
+	)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidRefreshToken):
+			response.ErrorJSON(
+				w,
+				http.StatusUnauthorized,
+				"INVALID_REFRESH_TOKEN",
+				"invalid refresh token",
+			)
+		default:
+			response.ErrorJSON(
+				w,
+				http.StatusInternalServerError,
+				"REFRESH_FAILED",
+				"failed to refresh access token",
+			)
+		}
+		return
+	}
+
+	response.JSON(w, http.StatusOK, result)
+}

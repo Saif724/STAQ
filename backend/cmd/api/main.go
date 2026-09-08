@@ -70,7 +70,9 @@ func main() {
 	usersService := users.NewService(userRepository)
 
 	jwtManager := jwt.NewManager(cfg.JWT.Secret)
-	authService := auth.NewService(usersService, jwtManager)
+	refreshTokenRepository := auth.NewRefreshTokenRepository(db)
+
+	authService := auth.NewService(usersService, jwtManager, refreshTokenRepository)
 	authHandler := auth.NewHandler(authService)
 
 	healthHandler := health.NewHandler(db, redisClient)
