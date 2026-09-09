@@ -47,12 +47,9 @@ func Load() (*Config, error) {
 			Secret: getEnv("JWT_SECRET", ""),
 		},
 
-		SMTP: SMTPConfig{
-			Host:     getEnv("SMTP_HOST", ""),
-			Port:     getEnv("SMTP_PORT", ""),
-			Username: getEnv("SMTP_USERNAME", ""),
-			Password: getEnv("SMTP_PASSWORD", ""),
-			From:     getEnv("SMTP_FROM", ""),
+		Email: EmailConfig{
+			APIKey: getEnv("RESEND_API_KEY", ""),
+			From:   getEnv("EMAIL_FROM", ""),
 		},
 	}
 

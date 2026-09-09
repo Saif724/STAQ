@@ -5,7 +5,7 @@ type Config struct {
 	Database DatabaseConfig
 	Redis    RedisConfig
 	JWT      JWTConfig
-	SMTP     SMTPConfig
+	Email    EmailConfig
 }
 
 type AppConfig struct {
@@ -29,10 +29,7 @@ type JWTConfig struct {
 	Secret string
 }
 
-type SMTPConfig struct {
-	Host     string
-	Port     string
-	Username string
-	Password string
-	From     string
+type EmailConfig struct {
+	APIKey string
+	From   string
 }

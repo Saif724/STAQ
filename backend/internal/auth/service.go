@@ -7,6 +7,7 @@ import (
 
 	"github.com/Saif724/STAQ/backend/internal/auth/dto"
 	"github.com/Saif724/STAQ/backend/internal/users"
+	"github.com/Saif724/STAQ/backend/pkg/email"
 	"github.com/Saif724/STAQ/backend/pkg/hash"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
 )
@@ -14,26 +15,32 @@ import (
 var (
 	ErrInvalidCredentials   = errors.New("invalid email or password")
 	ErrAccountInactive      = errors.New("account is inactive")
-	ErrEamilNotVerified     = errors.New("email not verified")
+	ErrEmailNotVerified     = errors.New("email not verified")
 	ErrRefreshTokenNotFound = errors.New("refresh token not found")
 	ErrInvalidRefreshToken  = errors.New("invalid refresh token")
 )
 
 type Service struct {
-	usersService           *users.Service
-	jwtManager             *jwt.Manager
-	refreshTokenRepository *RefreshTokenRepository
+	usersService                *users.Service
+	jwtManager                  *jwt.Manager
+	refreshTokenRepository      *RefreshTokenRepository
+	emailVerificationRepository *EmailVerificationRepository
+	emailSender                 email.Sender
 }
 
 func NewService(
 	usersService *users.Service,
 	jwtManager *jwt.Manager,
 	refreshTokenRepository *RefreshTokenRepository,
+	emailVerificationRepository *EmailVerificationRepository,
+	emailSender email.Sender,
 ) *Service {
 	return &Service{
-		usersService:           usersService,
-		jwtManager:             jwtManager,
-		refreshTokenRepository: refreshTokenRepository,
+		usersService:                usersService,
+		jwtManager:                  jwtManager,
+		refreshTokenRepository:      refreshTokenRepository,
+		emailVerificationRepository: emailVerificationRepository,
+		emailSender:                 emailSender,
 	}
 }
 
@@ -62,6 +69,14 @@ func (s *Service) Register(
 
 	if err != nil {
 		return nil, fmt.Errorf("registration failed: %w", err)
+	}
+
+	if err := s.SendVerificationEmail(
+		ctx,
+		user.ID,
+		user.Email,
+	); err != nil {
+		return nil, fmt.Errorf("failed to send verification eamil: %w", err)
 	}
 
 	return &dto.RegisterResponse{
@@ -101,7 +116,7 @@ func (s *Service) Login(
 	}
 
 	if !user.EmailVerified {
-		return nil, ErrEamilNotVerified
+		return nil, ErrEmailNotVerified
 	}
 
 	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID)

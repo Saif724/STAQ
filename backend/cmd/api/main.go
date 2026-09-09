@@ -17,6 +17,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/logger"
 	"github.com/Saif724/STAQ/backend/internal/router"
 	"github.com/Saif724/STAQ/backend/internal/users"
+	"github.com/Saif724/STAQ/backend/pkg/email"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
 )
 
@@ -71,13 +72,32 @@ func main() {
 
 	jwtManager := jwt.NewManager(cfg.JWT.Secret)
 	refreshTokenRepository := auth.NewRefreshTokenRepository(db)
-
-	authService := auth.NewService(usersService, jwtManager, refreshTokenRepository)
+	emailVerificationRepository := auth.NewEmailVerificationRepository(db)
+	emailSender := email.NewResendSender(
+		cfg.Email.APIKey,
+		cfg.Email.From,
+	)
+	authService := auth.NewService(
+		usersService,
+		jwtManager,
+		refreshTokenRepository,
+		emailVerificationRepository,
+		emailSender,
+	)
 	authHandler := auth.NewHandler(authService)
+
+	usersHandler := users.NewHandler(usersService)
 
 	healthHandler := health.NewHandler(db, redisClient)
 
-	handler := router.New(healthHandler, authHandler, logg, cfg.App.FrontendURL)
+	handler := router.New(
+		healthHandler,
+		authHandler,
+		jwtManager,
+		usersHandler,
+		logg,
+		cfg.App.FrontendURL,
+	)
 
 	server := &http.Server{
 		Addr:         ":" + cfg.App.Port,

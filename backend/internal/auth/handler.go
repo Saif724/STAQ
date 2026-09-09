@@ -80,7 +80,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 				"account is inactive",
 			)
 
-		case errors.Is(err, ErrEamilNotVerified):
+		case errors.Is(err, ErrEmailNotVerified):
 			response.ErrorJSON(
 				w,
 				http.StatusForbidden,
@@ -141,4 +141,109 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	var req dto.LogoutRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"invalid request body",
+		)
+		return
+	}
+
+	if err := h.service.Logout(r.Context(), req.RefreshToken); err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidRefreshToken):
+			response.ErrorJSON(
+				w,
+				http.StatusUnauthorized,
+				"INVALID_REFRESH_TOKEN",
+				"invalid refresh token",
+			)
+		default:
+			response.ErrorJSON(
+				w,
+				http.StatusInternalServerError,
+				"LOGOUT_FAILED",
+				"failed to logout",
+			)
+		}
+
+		return
+	}
+
+	response.JSON(
+		w,
+		http.StatusOK,
+		"loggout out successfully",
+	)
+}
+
+func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req dto.VerifyEmailRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"invalid request body",
+		)
+		return
+	}
+
+	err := h.service.VerifyEmail(
+		r.Context(),
+		req.Email,
+		req.Code,
+	)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrEmailAlreadyVerified):
+			response.ErrorJSON(
+				w,
+				http.StatusConflict,
+				"EMAIL_ALREADY_VERIFIED",
+				"email is already verified",
+			)
+
+		case errors.Is(err, ErrVerificationExpired):
+			response.ErrorJSON(
+				w,
+				http.StatusUnauthorized,
+				"VERIFICATION_EXPIRED",
+				"verification code has expired",
+			)
+
+		case errors.Is(err, ErrInvalidVerificationCode):
+			response.ErrorJSON(
+				w,
+				http.StatusUnauthorized,
+				"INVALID_VERIFICAION_CODE",
+				"invalid verification code",
+			)
+
+		default:
+			response.ErrorJSON(
+				w,
+				http.StatusInternalServerError,
+				"VERIFICATION_FAILED",
+				"failed to verify email",
+			)
+		}
+
+		return
+	}
+
+	response.Message(
+		w,
+		http.StatusOK,
+		"email verified successfully",
+	)
 }

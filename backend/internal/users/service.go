@@ -2,6 +2,7 @@ package users
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -90,4 +91,15 @@ func (s *Service) GetByEmail(
 	}
 
 	return s.repository.FindByEmail(ctx, email)
+}
+
+func (s *Service) MarkEmailVerified(
+	ctx context.Context,
+	userID string,
+) error {
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	return s.repository.MarkEmailVerified(ctx, userID)
 }

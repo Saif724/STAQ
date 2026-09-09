@@ -151,3 +151,23 @@ func (r *Repository) FindByEmail(
 
 	return user, nil
 }
+
+func (r *Repository) MarkEmailVerified(
+	ctx context.Context,
+	userID string,
+) error {
+	query := `
+		UPDATE users
+		SET
+			email_verified = TRUE
+			updated_at = NOW()
+		WHERE id = $1
+	`
+
+	_, err := r.db.Exec(ctx, query, userID)
+	if err != nil {
+		return fmt.Errorf("failed to mark email as verified: %w", err)
+	}
+
+	return nil
+}

@@ -78,3 +78,33 @@ func (s *Service) RefreshAccessToken(
 		AccessToken: accessToken,
 	}, nil
 }
+
+func (s *Service) Logout(
+	ctx context.Context,
+	rawRefreshToken string,
+) error {
+	if rawRefreshToken == "" {
+		return ErrInvalidRefreshToken
+	}
+
+	tokenHash := hashRefreshToken(rawRefreshToken)
+
+	token, err := s.refreshTokenRepository.FindByHash(ctx, tokenHash)
+	if err != nil {
+		if errors.Is(err, ErrRefreshTokenNotFound) {
+			return ErrInvalidRefreshToken
+		}
+
+		return fmt.Errorf("failed to find refresh token: %w", err)
+	}
+
+	if token.RevokedAt != nil {
+		return ErrInvalidRefreshToken
+	}
+
+	if err := s.refreshTokenRepository.Revoke(ctx, token.ID); err != nil {
+		return fmt.Errorf("failed to revoke refresh token: %w", err)
+	}
+
+	return nil
+}
