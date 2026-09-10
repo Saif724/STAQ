@@ -76,7 +76,7 @@ func (s *Service) Register(
 		user.ID,
 		user.Email,
 	); err != nil {
-		return nil, fmt.Errorf("failed to send verification eamil: %w", err)
+		return nil, fmt.Errorf("failed to send verification email: %w", err)
 	}
 
 	return &dto.RegisterResponse{

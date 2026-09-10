@@ -48,7 +48,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 			w,
 			http.StatusInternalServerError,
 			"USER_LOOKUP_FAILED",
-			"failed to retrive user",
+			"failed to retrieve user",
 		)
 		return
 	}

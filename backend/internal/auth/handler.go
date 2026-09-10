@@ -180,7 +180,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	response.JSON(
 		w,
 		http.StatusOK,
-		"loggout out successfully",
+		"logged out successfully",
 	)
 }
 
@@ -225,7 +225,7 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 			response.ErrorJSON(
 				w,
 				http.StatusUnauthorized,
-				"INVALID_VERIFICAION_CODE",
+				"INVALID_VERIFICATION_CODE",
 				"invalid verification code",
 			)
 
