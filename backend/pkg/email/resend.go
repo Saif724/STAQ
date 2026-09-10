@@ -51,7 +51,7 @@ func (s *ResendSender) Send(
 		return fmt.Errorf("failed to create email request: %w", err)
 	}
 
-	req.Header.Set("Authorizatin", "Bearer "+s.apiKey)
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "STAQ/1.0")
 
@@ -67,7 +67,7 @@ func (s *ResendSender) Send(
 
 	var result resendResponse
 
-	if err := json.NewDecoder(req.Body).Decode(&result); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("failed to decode resend response: %w", err)
 	}
 

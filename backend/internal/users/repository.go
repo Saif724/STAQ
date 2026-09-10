@@ -159,7 +159,7 @@ func (r *Repository) MarkEmailVerified(
 	query := `
 		UPDATE users
 		SET
-			email_verified = TRUE
+			email_verified = TRUE,
 			updated_at = NOW()
 		WHERE id = $1
 	`
