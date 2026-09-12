@@ -66,6 +66,7 @@ func (r *EmailVerificationRepository) FindByToken(
 			token,
 			expires_at,
 			verified_at,
+			revoked_at,
 			created_at
 		FROM email_verifications
 		WHERE token = $1
@@ -83,6 +84,7 @@ func (r *EmailVerificationRepository) FindByToken(
 		&verification.Token,
 		&verification.ExpiresAt,
 		&verification.VerifiedAt,
+		&verification.RevokedAt,
 		&verification.CreatedAt,
 	)
 
@@ -116,6 +118,29 @@ func (r *EmailVerificationRepository) MarkVerified(
 	if err != nil {
 		return fmt.Errorf(
 			"failed to mark email verification as verified: %w",
+			err,
+		)
+	}
+
+	return nil
+}
+
+func (r *EmailVerificationRepository) RevokeForUser(
+	ctx context.Context,
+	userID string,
+) error {
+	query := `
+		UPDATE email_verifications
+		SET revoked_at = NOW()
+		WHERE user_id = $1
+			AND revoked_at IS NULL
+	`
+
+	_, err := r.db.Exec(ctx, query, userID)
+
+	if err != nil {
+		return fmt.Errorf(
+			"failed to revoke email verifications: %w",
 			err,
 		)
 	}

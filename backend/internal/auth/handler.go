@@ -241,9 +241,69 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response.Message(
+	response.JSON(
 		w,
 		http.StatusOK,
-		"email verified successfully",
+		dto.VerifyEmailResponse{
+			Message: "email verified successfully",
+		},
+	)
+}
+
+func (h *Handler) ResendVerification(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	var req dto.ResendVerificationRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_REQUEST",
+			"invalid request body",
+		)
+		return
+	}
+
+	if err := h.service.ResendVerificationEmail(
+		r.Context(),
+		req.Email,
+	); err != nil {
+		switch {
+		case errors.Is(err, ErrEmailAlreadyVerified):
+			response.ErrorJSON(
+				w,
+				http.StatusConflict,
+				"EMAIL_ALREADY_VERIFIED",
+				"email is already verified",
+			)
+
+		case errors.Is(err, ErrInvalidVerificationCode):
+			response.ErrorJSON(
+				w,
+				http.StatusUnauthorized,
+				"INVALID_VERIFICATION",
+				"unable to resend verification email",
+			)
+
+		default:
+			response.ErrorJSON(
+				w,
+				http.StatusInternalServerError,
+				"INTERNAL_ERROR",
+				"failed to resend verification email",
+			)
+		}
+
+		return
+	}
+
+	response.JSON(
+		w,
+		http.StatusOK,
+		dto.ResendVerificationResponse{
+			Message: "verification email sent",
+		},
 	)
 }

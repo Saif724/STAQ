@@ -6,6 +6,7 @@ type Config struct {
 	Redis    RedisConfig
 	JWT      JWTConfig
 	Email    EmailConfig
+	Google   GoogleConfig
 }
 
 type AppConfig struct {
@@ -32,4 +33,10 @@ type JWTConfig struct {
 type EmailConfig struct {
 	APIKey string
 	From   string
+}
+
+type GoogleConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
 }

@@ -21,18 +21,21 @@ func New(
 ) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", healthHandler.Check)
-	mux.HandleFunc("/auth/register", authHandler.Register)
-	mux.HandleFunc("/auth/login", authHandler.Login)
-	mux.HandleFunc("/auth/refresh", authHandler.Refresh)
-	mux.HandleFunc("/auth/logout", authHandler.Logout)
+	mux.HandleFunc("GET /health", healthHandler.Check)
+
+	mux.HandleFunc("POST /auth/register", authHandler.Register)
+	mux.HandleFunc("POST /auth/login", authHandler.Login)
+	mux.HandleFunc("POST /auth/refresh", authHandler.Refresh)
+	mux.HandleFunc("POST /auth/logout", authHandler.Logout)
+	mux.HandleFunc("POST /auth/verify-email", authHandler.VerifyEmail)
+	mux.HandleFunc("POST /auth/resend-verification", authHandler.ResendVerification)
+
 	mux.Handle(
-		"/users/me",
+		"GET /users/me",
 		middleware.Auth(jwtManager)(
 			http.HandlerFunc(usersHandler.Me),
 		),
 	)
-	mux.HandleFunc("/auth/verify-email", authHandler.VerifyEmail)
 
 	return middleware.Chain(
 		mux,

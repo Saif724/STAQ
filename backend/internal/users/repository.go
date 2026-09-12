@@ -171,3 +171,38 @@ func (r *Repository) MarkEmailVerified(
 
 	return nil
 }
+
+func (r *Repository) UpdateForReRegistration(
+	ctx context.Context,
+	userID string,
+	fullName string,
+	passwordHash string,
+) error {
+	query := `
+		UPDATE users
+		SET
+			full_name = $1,
+			password_hash = $2,
+			updated_at = NOW()
+		WHERE id = $3
+			AND email_verified = FALSE
+	`
+
+	result, err := r.db.Exec(
+		ctx,
+		query,
+		fullName,
+		passwordHash,
+		userID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to update user for re-registration: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+
+	return nil
+}

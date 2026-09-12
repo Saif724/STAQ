@@ -60,6 +60,45 @@ func (s *Service) Register(
 		return nil, err
 	}
 
+	existingUser, err := s.usersService.GetByEmail(ctx, req.Email)
+
+	if err == nil {
+		if existingUser.EmailVerified {
+			return nil, users.ErrEmailExists
+		}
+
+		if err := s.usersService.UpdateForReRegistration(
+			ctx,
+			existingUser.ID,
+			req.FullName,
+			req.Password,
+		); err != nil {
+			return nil, fmt.Errorf("registration failed: %w", err)
+		}
+
+		if err := s.emailVerificationRepository.RevokeForUser(
+			ctx,
+			existingUser.ID,
+		); err != nil {
+			return nil, fmt.Errorf("registration failed: %w", err)
+		}
+
+		if err := s.SendVerificationEmail(
+			ctx,
+			existingUser.ID,
+			existingUser.Email,
+		); err != nil {
+			return nil, fmt.Errorf("failed to send verification email: %w", err)
+		}
+
+		return &dto.RegisterResponse{
+			ID:            existingUser.ID,
+			FullName:      existingUser.FullName,
+			Email:         existingUser.Email,
+			EmailVerified: existingUser.EmailVerified,
+		}, nil
+	}
+
 	user, err := s.usersService.Create(
 		ctx,
 		req.FullName,

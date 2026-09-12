@@ -51,6 +51,12 @@ func Load() (*Config, error) {
 			APIKey: getEnv("RESEND_API_KEY", ""),
 			From:   getEnv("EMAIL_FROM", ""),
 		},
+
+		Google: GoogleConfig{
+			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
+			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
+			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
+		},
 	}
 
 	if err := cfg.Validate(); err != nil {

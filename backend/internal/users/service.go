@@ -103,3 +103,37 @@ func (s *Service) MarkEmailVerified(
 
 	return s.repository.MarkEmailVerified(ctx, userID)
 }
+
+func (s *Service) UpdateForReRegistration(
+	ctx context.Context,
+	userID string,
+	fullName string,
+	password string,
+) error {
+	userID = strings.TrimSpace(userID)
+	fullName = strings.TrimSpace(fullName)
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
+	if fullName == "" {
+		return errors.New("full name is required")
+	}
+
+	if password == "" {
+		return errors.New("password is required")
+	}
+
+	passwordHash, err := hash.HashPassword(password)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	return s.repository.UpdateForReRegistration(
+		ctx,
+		userID,
+		fullName,
+		passwordHash,
+	)
+}

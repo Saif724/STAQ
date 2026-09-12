@@ -154,6 +154,10 @@ func (s *Service) VerifyEmail(
 		return ErrInvalidVerificationCode
 	}
 
+	if verification.RevokedAt != nil {
+		return ErrInvalidVerificationCode
+	}
+
 	if !time.Now().UTC().Before(verification.ExpiresAt) {
 		return ErrVerificationExpired
 	}
@@ -170,6 +174,45 @@ func (s *Service) VerifyEmail(
 		user.ID,
 	); err != nil {
 		return fmt.Errorf("failed to verify user email: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Service) ResendVerificationEmail(
+	ctx context.Context,
+	emailAddress string,
+) error {
+	if err := validateEmail(emailAddress); err != nil {
+		return err
+	}
+
+	user, err := s.usersService.GetByEmail(ctx, emailAddress)
+	if err != nil {
+		if errors.Is(err, users.ErrUserNotFound) {
+			return ErrInvalidVerificationCode
+		}
+
+		return fmt.Errorf("failed to find user: %w", err)
+	}
+
+	if user.EmailVerified {
+		return ErrEmailAlreadyVerified
+	}
+
+	if err := s.emailVerificationRepository.RevokeForUser(
+		ctx,
+		user.ID,
+	); err != nil {
+		return fmt.Errorf("failed to revoke previous verification: %w", err)
+	}
+
+	if err := s.SendVerificationEmail(
+		ctx,
+		user.ID,
+		user.Email,
+	); err != nil {
+		return fmt.Errorf("failed to send verification email: %w", err)
 	}
 
 	return nil
