@@ -30,6 +30,9 @@ func New(
 	mux.HandleFunc("POST /auth/verify-email", authHandler.VerifyEmail)
 	mux.HandleFunc("POST /auth/resend-verification", authHandler.ResendVerification)
 
+	mux.HandleFunc("GET /auth/google", authHandler.GoogleLogin)
+	mux.HandleFunc("GET /auth/google/callback", authHandler.GoogleCallback)
+
 	mux.Handle(
 		"GET /users/me",
 		middleware.Auth(jwtManager)(

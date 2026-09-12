@@ -11,12 +11,17 @@ import (
 )
 
 type Handler struct {
-	service *Service
+	service      *Service
+	oauthService *OAuthService
 }
 
-func NewHandler(service *Service) *Handler {
+func NewHandler(
+	service *Service,
+	oauthService *OAuthService,
+) *Handler {
 	return &Handler{
-		service: service,
+		service:      service,
+		oauthService: oauthService,
 	}
 }
 
@@ -304,6 +309,118 @@ func (h *Handler) ResendVerification(
 		http.StatusOK,
 		dto.ResendVerificationResponse{
 			Message: "verification email sent",
+		},
+	)
+}
+
+func (h *Handler) GoogleLogin(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	url, state, err := h.oauthService.AuthorizationURL(
+		r.Context(),
+	)
+	if err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusInternalServerError,
+			"INTERNAL_ERROR",
+			"failed to initailize google authentication",
+		)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   600,
+	})
+
+	http.Redirect(
+		w,
+		r,
+		url,
+		http.StatusTemporaryRedirect,
+	)
+}
+
+func (h *Handler) GoogleCallback(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	state := r.URL.Query().Get("state")
+	code := r.URL.Query().Get("code")
+
+	if state == "" || code == "" {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_OAUTH_CALLBACK",
+			"invalid google oauth callback",
+		)
+		return
+	}
+
+	cookie, err := r.Cookie("oauth_state")
+	if err != nil || cookie.Value != state {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_OAUTH_STATE",
+			"invalid oauth state",
+		)
+		return
+	}
+
+	if err := h.oauthService.ValidateOAuthState(
+		r.Context(),
+		state,
+	); err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusUnauthorized,
+			"INVALID_OAUTH_STATE",
+			"invalid or expired oauth state",
+		)
+		return
+	}
+
+	accessToken, refreshToken, err :=
+		h.oauthService.GoogleCallback(
+			r.Context(),
+			code,
+		)
+
+	if err != nil {
+		response.ErrorJSON(
+			w,
+			http.StatusUnauthorized,
+			"OAUTH_FAILED",
+			err.Error(),
+		)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+
+	response.JSON(
+		w,
+		http.StatusOK,
+		map[string]string{
+			"access_token":  accessToken,
+			"refresh_token": refreshToken,
 		},
 	)
 }

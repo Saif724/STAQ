@@ -15,14 +15,18 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
-const googleProvider = "google"
+const (
+	googleProvider     = "google"
+	oauthStateLifetime = 10 * time.Minute
+)
 
 type GoogleUser struct {
-	ID            string `json:"id"`
+	ID            string `json:"sub"`
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
 	Name          string `json:"name"`
@@ -34,6 +38,7 @@ type OAuthService struct {
 	jwtManager       *jwt.Manager
 	refreshTokenRepo *RefreshTokenRepository
 	googleConfig     *oauth2.Config
+	redis            *redis.Client
 }
 
 func NewOAuthService(
@@ -42,6 +47,7 @@ func NewOAuthService(
 	jwtManager *jwt.Manager,
 	refreshTokenRepo *RefreshTokenRepository,
 	cfg config.GoogleConfig,
+	redisClient *redis.Client,
 ) *OAuthService {
 
 	return &OAuthService{
@@ -49,6 +55,7 @@ func NewOAuthService(
 		oauthRepository:  oauthRepository,
 		jwtManager:       jwtManager,
 		refreshTokenRepo: refreshTokenRepo,
+		redis:            redisClient,
 		googleConfig: &oauth2.Config{
 			ClientID:     cfg.ClientID,
 			ClientSecret: cfg.ClientSecret,
@@ -73,10 +80,26 @@ func generateOAuthState() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-func (s *OAuthService) AuthorizationURL() (string, string, error) {
+func (s *OAuthService) AuthorizationURL(
+	ctx context.Context,
+) (string, string, error) {
 	state, err := generateOAuthState()
 	if err != nil {
 		return "", "", err
+	}
+
+	key := "oauth:state:" + state
+
+	if err := s.redis.Set(
+		ctx,
+		key,
+		"1",
+		oauthStateLifetime,
+	).Err(); err != nil {
+		return "", "", fmt.Errorf(
+			"failed to store oauth state: %w",
+			err,
+		)
 	}
 
 	url := s.googleConfig.AuthCodeURL(
@@ -90,7 +113,7 @@ func (s *OAuthService) AuthorizationURL() (string, string, error) {
 func (s *OAuthService) GoogleCallback(
 	ctx context.Context,
 	code string,
-) (accessToken string, refreshToken string, err error) {
+) (string, string, error) {
 	if strings.TrimSpace(code) == "" {
 		return "", "", errors.New("authorization code is required")
 	}
@@ -283,4 +306,38 @@ func (s *OAuthService) issueTokens(
 	}
 
 	return accessToken, refreshToken, nil
+}
+
+func (s *OAuthService) ValidateOAuthState(
+	ctx context.Context,
+	state string,
+) error {
+	state = strings.TrimSpace(state)
+
+	if state == "" {
+		return errors.New("oauth state is required")
+	}
+
+	key := "oauth:state:" + state
+
+	exists, err := s.redis.Exists(ctx, key).Result()
+	if err != nil {
+		return fmt.Errorf(
+			"failed to validate oauth state: %w",
+			err,
+		)
+	}
+
+	if exists != 1 {
+		return errors.New("invalid or expired oauth state")
+	}
+
+	if err := s.redis.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf(
+			"failed to consume oauth state: %w",
+			err,
+		)
+	}
+
+	return nil
 }

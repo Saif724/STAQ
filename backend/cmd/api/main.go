@@ -73,6 +73,8 @@ func main() {
 	jwtManager := jwt.NewManager(cfg.JWT.Secret)
 	refreshTokenRepository := auth.NewRefreshTokenRepository(db)
 	emailVerificationRepository := auth.NewEmailVerificationRepository(db)
+	oauthRepository := auth.NewOAuthAccountRepository(db)
+
 	emailSender := email.NewResendSender(
 		cfg.Email.APIKey,
 		cfg.Email.From,
@@ -84,7 +86,18 @@ func main() {
 		emailVerificationRepository,
 		emailSender,
 	)
-	authHandler := auth.NewHandler(authService)
+	oauthService := auth.NewOAuthService(
+		usersService,
+		oauthRepository,
+		jwtManager,
+		refreshTokenRepository,
+		cfg.Google,
+		redisClient,
+	)
+	authHandler := auth.NewHandler(
+		authService,
+		oauthService,
+	)
 
 	usersHandler := users.NewHandler(usersService)
 

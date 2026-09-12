@@ -4,26 +4,26 @@ import "testing"
 
 func TestValidatePassword(t *testing.T) {
 	tests := []struct {
-		name string
+		name     string
 		password string
-		valid bool
+		valid    bool
 	}{
 		{
-			name: "valid password",
+			name:     "valid password",
 			password: "secure-password",
-			valid: true,
-		},{
-			name: "too short",
+			valid:    true,
+		}, {
+			name:     "too short",
 			password: "1234567",
-			valid: false,
-		},{
-			name: "exactly eight characters",
+			valid:    false,
+		}, {
+			name:     "exactly eight characters",
 			password: "12345678",
-			valid: true,
-		},{
-			name: "too long",
+			valid:    true,
+		}, {
+			name:     "too long",
 			password: string(make([]byte, 129)),
-			valid: false,
+			valid:    false,
 		},
 	}
 
@@ -40,20 +40,20 @@ func TestValidatePassword(t *testing.T) {
 
 func TestValidateEmail(t *testing.T) {
 	tests := []struct {
-		name string
+		name  string
 		email string
 		valid bool
 	}{
 		{
-			name: "valid email",
+			name:  "valid email",
 			email: "user@example.com",
 			valid: true,
-		},{
-			name: "empty email",
+		}, {
+			name:  "empty email",
 			email: "",
 			valid: false,
-		},{
-			name: "invalid email",
+		}, {
+			name:  "invalid email",
 			email: "not-an-email",
 			valid: false,
 		},
@@ -72,22 +72,22 @@ func TestValidateEmail(t *testing.T) {
 
 func TestValidateFullName(t *testing.T) {
 	tests := []struct {
-		name string
+		name     string
 		fullName string
-		valid bool
+		valid    bool
 	}{
 		{
-			name: "valid name",
+			name:     "valid name",
 			fullName: "Saif Ahmed",
-			valid: true,
-		},{
-			name: "empty name",
+			valid:    true,
+		}, {
+			name:     "empty name",
 			fullName: "",
-			valid: false,
-		},{
-			name: "one character",
+			valid:    false,
+		}, {
+			name:     "one character",
 			fullName: "A",
-			valid: false,
+			valid:    false,
 		},
 	}
 
