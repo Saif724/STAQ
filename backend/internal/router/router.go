@@ -6,6 +6,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
+	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
@@ -18,6 +19,7 @@ func New(
 	jwtManager *jwt.Manager,
 	usersHandler *users.Handler,
 	taskHandler *tasks.Handler,
+	queueHandler *queues.Handler,
 	logg zerolog.Logger,
 	frontendURL string,
 ) http.Handler {
@@ -71,6 +73,31 @@ func New(
 		middleware.Auth(jwtManager)(
 			http.HandlerFunc(taskHandler.Delete),
 		),
+	)
+
+	mux.Handle(
+		"GET /queues",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(queueHandler.List),
+		),
+	)
+	mux.Handle(
+		"GET /queues/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(queueHandler.Get),
+		),
+	)
+	mux.Handle(
+		"POST /queues",
+		http.HandlerFunc(queueHandler.Create),
+	)
+	mux.Handle(
+		"PUT /queues/{id}",
+		http.HandlerFunc(queueHandler.Update),
+	)
+	mux.Handle(
+		"DELETE /queues/{id}",
+		http.HandlerFunc(queueHandler.Delete),
 	)
 
 	return middleware.Chain(
