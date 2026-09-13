@@ -7,17 +7,44 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/google/uuid"
 )
 
 type Service struct {
-	repository *Repository
+	repository   *Repository
+	queueService *queues.Service
 }
 
-func NewService(repository *Repository) *Service {
+func NewService(repository *Repository, queueService *queues.Service) *Service {
 	return &Service{
-		repository: repository,
+		repository:   repository,
+		queueService: queueService,
 	}
+}
+
+func (s *Service) validateQueue(
+	ctx context.Context,
+	queueID string,
+) error {
+	if strings.TrimSpace(queueID) == "" {
+		return errors.New("queue id is required")
+	}
+
+	queue, err := s.queueService.GetByID(ctx, queueID)
+	if err != nil {
+		if errors.Is(err, queues.ErrQueueNotFound) {
+			return errors.New("queue not found")
+		}
+
+		return fmt.Errorf("failed to validate queue: %w", err)
+	}
+
+	if !queue.IsActive {
+		return errors.New("queue is inactive")
+	}
+
+	return nil
 }
 
 type CreateTaskInput struct {
@@ -48,8 +75,8 @@ func (s *Service) Create(
 		return nil, errors.New("user id is required")
 	}
 
-	if strings.TrimSpace(input.QueueID) == "" {
-		return nil, errors.New("queue id is required")
+	if err := s.validateQueue(ctx, input.QueueID); err != nil {
+		return nil, err
 	}
 
 	name := strings.TrimSpace(input.Name)
@@ -163,6 +190,10 @@ func (s *Service) Update(
 
 	if input.MaxRetries < 0 {
 		return nil, errors.New("max retries cannot be negative")
+	}
+
+	if err := s.validateQueue(ctx, input.QueueID); err != nil {
+		return nil, err
 	}
 
 	task := &Task{

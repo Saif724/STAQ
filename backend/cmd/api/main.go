@@ -103,13 +103,13 @@ func main() {
 
 	usersHandler := users.NewHandler(usersService)
 
-	tasksRepository := tasks.NewRepository(db)
-	tasksService := tasks.NewService(tasksRepository)
-	tasksHandler := tasks.NewHandler(tasksService)
-
 	queuesRepository := queues.NewRepository(db)
 	queuesService := queues.NewService(queuesRepository)
 	queuesHandler := queues.NewHandler(queuesService)
+
+	tasksRepository := tasks.NewRepository(db)
+	tasksService := tasks.NewService(tasksRepository, queuesService)
+	tasksHandler := tasks.NewHandler(tasksService)
 
 	healthHandler := health.NewHandler(db, redisClient)
 
