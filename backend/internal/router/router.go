@@ -6,6 +6,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
+	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
 	"github.com/rs/zerolog"
@@ -16,6 +17,7 @@ func New(
 	authHandler *auth.Handler,
 	jwtManager *jwt.Manager,
 	usersHandler *users.Handler,
+	taskHandler *tasks.Handler,
 	logg zerolog.Logger,
 	frontendURL string,
 ) http.Handler {
@@ -37,6 +39,37 @@ func New(
 		"GET /users/me",
 		middleware.Auth(jwtManager)(
 			http.HandlerFunc(usersHandler.Me),
+		),
+	)
+
+	mux.Handle(
+		"POST /tasks",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(taskHandler.Create),
+		),
+	)
+	mux.Handle(
+		"GET /tasks",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(taskHandler.List),
+		),
+	)
+	mux.Handle(
+		"GET /tasks/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(taskHandler.Get),
+		),
+	)
+	mux.Handle(
+		"PUT /tasks/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(taskHandler.Update),
+		),
+	)
+	mux.Handle(
+		"DELETE /tasks/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(taskHandler.Delete),
 		),
 	)
 

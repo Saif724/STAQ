@@ -16,6 +16,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/health"
 	"github.com/Saif724/STAQ/backend/internal/logger"
 	"github.com/Saif724/STAQ/backend/internal/router"
+	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/email"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
@@ -101,6 +102,10 @@ func main() {
 
 	usersHandler := users.NewHandler(usersService)
 
+	tasksRepository := tasks.NewRepository(db)
+	tasksService := tasks.NewService(tasksRepository)
+	tasksHandler := tasks.NewHandler(tasksService)
+
 	healthHandler := health.NewHandler(db, redisClient)
 
 	handler := router.New(
@@ -108,6 +113,7 @@ func main() {
 		authHandler,
 		jwtManager,
 		usersHandler,
+		tasksHandler,
 		logg,
 		cfg.App.FrontendURL,
 	)
