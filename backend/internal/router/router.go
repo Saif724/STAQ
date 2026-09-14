@@ -8,6 +8,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/middleware"
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
+	"github.com/Saif724/STAQ/backend/internal/triggers"
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
 	"github.com/rs/zerolog"
@@ -20,6 +21,7 @@ func New(
 	usersHandler *users.Handler,
 	taskHandler *tasks.Handler,
 	queueHandler *queues.Handler,
+	triggersHandler *triggers.Handler,
 	logg zerolog.Logger,
 	frontendURL string,
 ) http.Handler {
@@ -98,6 +100,37 @@ func New(
 	mux.Handle(
 		"DELETE /queues/{id}",
 		http.HandlerFunc(queueHandler.Delete),
+	)
+
+	mux.Handle(
+		"POST /triggers",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(triggersHandler.Create),
+		),
+	)
+	mux.Handle(
+		"GET /tasks/{taskID}/triggers",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(triggersHandler.ListByTaskID),
+		),
+	)
+	mux.Handle(
+		"GET /triggers/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(triggersHandler.Get),
+		),
+	)
+	mux.Handle(
+		"PUT /triggers/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(triggersHandler.Update),
+		),
+	)
+	mux.Handle(
+		"DELETE /triggers/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(triggersHandler.Delete),
+		),
 	)
 
 	return middleware.Chain(

@@ -8,6 +8,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
 	github.com/redis/go-redis/v9 v9.22.0
+	github.com/robfig/cron v1.2.0
 	github.com/rs/zerolog v1.35.1
 	golang.org/x/crypto v0.56.0
 	golang.org/x/oauth2 v0.37.0

@@ -18,6 +18,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/router"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
+	"github.com/Saif724/STAQ/backend/internal/triggers"
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/email"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
@@ -111,6 +112,10 @@ func main() {
 	tasksService := tasks.NewService(tasksRepository, queuesService)
 	tasksHandler := tasks.NewHandler(tasksService)
 
+	triggersRepository := triggers.NewRepository(db)
+	triggersService := triggers.NewService(triggersRepository, tasksService)
+	triggersHandler := triggers.NewHandler(triggersService)
+
 	healthHandler := health.NewHandler(db, redisClient)
 
 	handler := router.New(
@@ -120,6 +125,7 @@ func main() {
 		usersHandler,
 		tasksHandler,
 		queuesHandler,
+		triggersHandler,
 		logg,
 		cfg.App.FrontendURL,
 	)
@@ -173,7 +179,7 @@ func main() {
 			Msg("HTTP server shutdown failed")
 	} else {
 		logg.Info().
-			Str("module", "mail").
+			Str("module", "http").
 			Msg("HTTP server shutdown complete")
 	}
 
