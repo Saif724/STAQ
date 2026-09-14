@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 
+	"github.com/Saif724/STAQ/backend/internal/actions"
 	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
@@ -22,6 +23,7 @@ func New(
 	taskHandler *tasks.Handler,
 	queueHandler *queues.Handler,
 	triggersHandler *triggers.Handler,
+	actionsHandler *actions.Handler,
 	logg zerolog.Logger,
 	frontendURL string,
 ) http.Handler {
@@ -130,6 +132,37 @@ func New(
 		"DELETE /triggers/{id}",
 		middleware.Auth(jwtManager)(
 			http.HandlerFunc(triggersHandler.Delete),
+		),
+	)
+
+	mux.Handle(
+		"POST /actions",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(actionsHandler.Create),
+		),
+	)
+	mux.Handle(
+		"GET /tasks/{taskID}/actions",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(actionsHandler.ListByTaskID),
+		),
+	)
+	mux.Handle(
+		"GET /actions/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(actionsHandler.Get),
+		),
+	)
+	mux.Handle(
+		"PUT /actions/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(actionsHandler.Update),
+		),
+	)
+	mux.Handle(
+		"DELETE /actions/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(actionsHandler.Delete),
 		),
 	)
 

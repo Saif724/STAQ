@@ -9,6 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Saif724/STAQ/backend/internal/actions"
+	emailAction "github.com/Saif724/STAQ/backend/internal/actions/email"
+	httpAction "github.com/Saif724/STAQ/backend/internal/actions/http"
+	reminderAction "github.com/Saif724/STAQ/backend/internal/actions/reminder"
+	shellAction "github.com/Saif724/STAQ/backend/internal/actions/shell"
 	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/broker"
 	"github.com/Saif724/STAQ/backend/internal/config"
@@ -116,6 +121,36 @@ func main() {
 	triggersService := triggers.NewService(triggersRepository, tasksService)
 	triggersHandler := triggers.NewHandler(triggersService)
 
+	actionsRepository := actions.NewRepository(db)
+	actionsService := actions.NewService(actionsRepository, tasksService)
+	actionsHandler := actions.NewHandler(actionsService)
+
+	actionRegistry := actions.NewRegistry()
+
+	actionRegistry.Register(
+		actions.TypeReminder,
+		reminderAction.NewExecutor(),
+	)
+
+	actionRegistry.Register(
+		actions.TypeEmail,
+		emailAction.NewExecutor(),
+	)
+
+	actionRegistry.Register(
+		actions.TypeHTTP,
+		httpAction.NewExecutor(&http.Client{
+			Timeout: 30 * time.Second,
+		}),
+	)
+
+	actionRegistry.Register(
+		actions.TypeShell,
+		shellAction.NewExecutor(
+			[]string{},
+		),
+	)
+
 	healthHandler := health.NewHandler(db, redisClient)
 
 	handler := router.New(
@@ -126,6 +161,7 @@ func main() {
 		tasksHandler,
 		queuesHandler,
 		triggersHandler,
+		actionsHandler,
 		logg,
 		cfg.App.FrontendURL,
 	)
