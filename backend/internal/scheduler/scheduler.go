@@ -43,9 +43,11 @@ func (s *Scheduler) Start(ctx context.Context) {
 
 	go func() {
 		if err := s.service.Run(ctx); err != nil {
-			s.logger.Error().
-				Err(err).
-				Msg("scheduler exited with error")
+			if err != context.Canceled && err != context.DeadlineExceeded {
+				s.logger.Error().
+					Err(err).
+					Msg("scheduler exited with error")
+			}
 		}
 
 		s.mu.Lock()

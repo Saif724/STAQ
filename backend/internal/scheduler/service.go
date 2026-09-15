@@ -116,6 +116,7 @@ func (s *Service) processOne(
 	job := broker.TaskJob{
 		ID:          uuid.NewString(),
 		TaskID:      trigger.TaskID,
+		TriggerID:   trigger.ID,
 		ScheduledAt: scheduledTime,
 		CreatedAt:   now,
 	}
