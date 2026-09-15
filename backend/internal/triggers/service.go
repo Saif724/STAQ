@@ -86,7 +86,6 @@ func (s *Service) Create(
 	cronExpression, err := validateSchedule(
 		triggerType,
 		input.CronExpression,
-		startAt,
 	)
 	if err != nil {
 		return nil, err
@@ -216,7 +215,6 @@ func (s *Service) Update(
 	cronExpression, err := validateSchedule(
 		triggerType,
 		input.CronExpression,
-		startAt,
 	)
 	if err != nil {
 		return nil, err
@@ -293,16 +291,16 @@ func (s *Service) CalculateNextRun(
 		return time.Time{}, nil
 
 	case TypeDaily:
-		return localFrom.AddDate(0, 0, 1), nil
+		return localFrom.AddDate(0, 0, 1).UTC(), nil
 
 	case TypeWeekly:
-		return localFrom.AddDate(0, 0, 7), nil
+		return localFrom.AddDate(0, 0, 7).UTC(), nil
 
 	case TypeMonthly:
-		return localFrom.AddDate(0, 1, 0), nil
+		return localFrom.AddDate(0, 1, 0).UTC(), nil
 
 	case TypeYearly:
-		return localFrom.AddDate(1, 0, 0), nil
+		return localFrom.AddDate(1, 0, 0).UTC(), nil
 
 	case TypeCron:
 		if trigger.CronExpression == nil ||
@@ -339,7 +337,6 @@ func isValidTriggerType(triggerType string) bool {
 func validateSchedule(
 	triggerType string,
 	cronExpression *string,
-	startAt time.Time,
 ) (*string, error) {
 	switch triggerType {
 	case TypeOnce,
@@ -412,4 +409,15 @@ func calculateFirstRun(
 	}
 
 	return time.Time{}, ErrInvalidTriggerType
+}
+
+func (s *Service) GetByIDForScheduler(
+	ctx context.Context,
+	triggerID string,
+) (*Trigger, error) {
+	if strings.TrimSpace(triggerID) == "" {
+		return nil, errors.New("trigger id is required")
+	}
+
+	return s.repository.FindByID(ctx, triggerID)
 }

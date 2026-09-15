@@ -235,12 +235,12 @@ func (r *Repository) Update(
 	const query = `
 		UPDATE triggers
 		SET
-			triggers_type = $1
-			cron_expression = $2
-			timezone = $3
-			next_run_at = $4
-			last_run_at = $5
-			is_active = $6
+			trigger_type = $1,
+			cron_expression = $2,
+			timezone = $3,
+			next_run_at = $4,
+			last_run_at = $5,
+			is_active = $6,
 			updated_at = $7
 		WHERE id = $8
 	`
@@ -289,4 +289,59 @@ func (r *Repository) Delete(
 	}
 
 	return nil
+}
+
+func (r *Repository) FindDueForUpdate(
+	ctx context.Context,
+	tx pgx.Tx,
+	now time.Time,
+) (*Trigger, error) {
+	const query = `
+		SELECT
+			id,
+			task_id,
+			trigger_type,
+			cron_expression,
+			timezone,
+			next_run_at,
+			last_run_at,
+			is_active,
+			created_at,
+			updated_at
+		FROM triggers
+		WHERE is_active = TRUE
+			AND next_run_at <= $1
+		ORDER BY next_run_at ASC
+		LIMIT 1
+		FOR UPDATE SKIP LOCKED
+	`
+
+	trigger := &Trigger{}
+
+	err := tx.QueryRow(
+		ctx,
+		query,
+		now,
+	).Scan(
+		&trigger.ID,
+		&trigger.TaskID,
+		&trigger.TriggerType,
+		&trigger.CronExpression,
+		&trigger.TimeZone,
+		&trigger.NextRunAt,
+		&trigger.LastRunAt,
+		&trigger.IsActive,
+		&trigger.CreatedAt,
+		&trigger.UpdatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrTriggerNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to find due trigger for update: %w", err)
+	}
+
+	return trigger, nil
 }

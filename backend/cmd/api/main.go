@@ -100,7 +100,7 @@ func main() {
 		jwtManager,
 		refreshTokenRepository,
 		cfg.Google,
-		redisClient,
+		redisClient.Client(),
 	)
 	authHandler := auth.NewHandler(
 		authService,
@@ -151,7 +151,7 @@ func main() {
 		),
 	)
 
-	healthHandler := health.NewHandler(db, redisClient)
+	healthHandler := health.NewHandler(db, redisClient.Client())
 
 	handler := router.New(
 		healthHandler,
