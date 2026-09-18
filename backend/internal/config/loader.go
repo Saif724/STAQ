@@ -53,9 +53,13 @@ func Load() (*Config, error) {
 		},
 
 		Google: GoogleConfig{
-			ClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
-			ClientSecret: getEnv("GOOGLE_CLIENT_SECRET", ""),
-			RedirectURL:  getEnv("GOOGLE_REDIRECT_URL", ""),
+			ClientID:         getEnv("GOOGLE_CLIENT_ID", ""),
+			ClientSecret:     getEnv("GOOGLE_CLIENT_SECRET", ""),
+			RedirectURL:      getEnv("GOOGLE_REDIRECT_URL", ""),
+			GmailRedirectURL: getEnv("GOOGLE_GMAIL_REDIRECT_URL", ""),
+		},
+		Encryption: EncryptionConfig{
+			Key: getEnv("TOKEN_ENCRYPTION_KEY", ""),
 		},
 	}
 

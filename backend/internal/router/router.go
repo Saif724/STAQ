@@ -6,6 +6,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/actions"
 	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/health"
+	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
@@ -18,6 +19,7 @@ import (
 func New(
 	healthHandler *health.Handler,
 	authHandler *auth.Handler,
+	gmailHandler *emailIntegration.Handler,
 	jwtManager *jwt.Manager,
 	usersHandler *users.Handler,
 	taskHandler *tasks.Handler,
@@ -40,6 +42,18 @@ func New(
 
 	mux.HandleFunc("GET /auth/google", authHandler.GoogleLogin)
 	mux.HandleFunc("GET /auth/google/callback", authHandler.GoogleCallback)
+
+	mux.Handle(
+		"GET /connections/google",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(gmailHandler.BeginGmailAuthorization),
+		),
+	)
+
+	mux.HandleFunc(
+		"GET /connections/google/callback",
+		gmailHandler.CompleteGmailAuthorization,
+	)
 
 	mux.Handle(
 		"GET /users/me",

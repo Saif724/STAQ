@@ -1,12 +1,13 @@
 package config
 
 type Config struct {
-	App      AppConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	JWT      JWTConfig
-	Email    EmailConfig
-	Google   GoogleConfig
+	App        AppConfig
+	Database   DatabaseConfig
+	Redis      RedisConfig
+	JWT        JWTConfig
+	Email      EmailConfig
+	Google     GoogleConfig
+	Encryption EncryptionConfig
 }
 
 type AppConfig struct {
@@ -36,7 +37,12 @@ type EmailConfig struct {
 }
 
 type GoogleConfig struct {
-	ClientID     string
-	ClientSecret string
-	RedirectURL  string
+	ClientID         string
+	ClientSecret     string
+	RedirectURL      string
+	GmailRedirectURL string
+}
+
+type EncryptionConfig struct {
+	Key string
 }

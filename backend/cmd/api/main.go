@@ -17,8 +17,10 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/auth"
 	"github.com/Saif724/STAQ/backend/internal/broker"
 	"github.com/Saif724/STAQ/backend/internal/config"
+	"github.com/Saif724/STAQ/backend/internal/connections"
 	"github.com/Saif724/STAQ/backend/internal/database"
 	"github.com/Saif724/STAQ/backend/internal/health"
+	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/logger"
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/router"
@@ -27,6 +29,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/email"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
+	"github.com/Saif724/STAQ/backend/pkg/securetoken"
 )
 
 func main() {
@@ -75,6 +78,15 @@ func main() {
 		Str("module", "redis").
 		Msg("Redis connection established")
 
+	encryptor, err := securetoken.NewEncryptorFromBase64(
+		cfg.Encryption.Key,
+	)
+	if err != nil {
+		logg.Fatal().
+			Err(err).
+			Msg("Failed to initialize token encryptor")
+	}
+
 	userRepository := users.NewRepository(db)
 	usersService := users.NewService(userRepository)
 
@@ -106,6 +118,21 @@ func main() {
 		authService,
 		oauthService,
 	)
+
+	gmailOAuthService := emailIntegration.NewGmailOAuthService(
+		cfg.Google,
+		redisClient.Client(),
+	)
+
+	connectionsRepository := connections.NewRepository(db)
+	connectionsService := connections.NewService(connectionsRepository)
+
+	gmailIntegrationService := emailIntegration.NewService(
+		gmailOAuthService,
+		connectionsService,
+		encryptor,
+	)
+	gmailHandler := emailIntegration.NewHandler(gmailIntegrationService)
 
 	usersHandler := users.NewHandler(usersService)
 
@@ -156,6 +183,7 @@ func main() {
 	handler := router.New(
 		healthHandler,
 		authHandler,
+		gmailHandler,
 		jwtManager,
 		usersHandler,
 		tasksHandler,
