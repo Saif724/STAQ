@@ -56,7 +56,7 @@ func FetchGoogleAccount(
 
 	var account GoogleAccount
 
-	if err := json.NewDecoder(req.Body).Decode(&account); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&account); err != nil {
 		return nil, fmt.Errorf("failed to decode Google account: %w", err)
 	}
 

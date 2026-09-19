@@ -68,11 +68,20 @@ func (h *Handler) CompleteGmailAuthorization(
 		response.ErrorJSON(
 			w,
 			http.StatusBadRequest,
-			"INVALID_OAUTH_CALLBACK",
-			"Missing OAuth state or authorization code",
+			"GMAIL_AUTHORIZATION_DENIED",
+			"Google authorization was denied",
 		)
 
 		return
+	}
+
+	if state == "" || code == "" {
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_OAUTH_CALLBACK",
+			"Missing OAuth state or authorization code",
+		)
 	}
 
 	userID, connection, err := h.service.CompleteGmailAuthorization(r.Context(), state, code)
@@ -85,6 +94,15 @@ func (h *Handler) CompleteGmailAuthorization(
 			"Failed to connect Gmail account",
 		)
 		return
+	}
+
+	if connection == nil {
+		response.ErrorJSON(
+			w,
+			http.StatusInternalServerError,
+			"GMAIL_CONNECTION_FAILED",
+			"Gmail connection was not created",
+		)
 	}
 
 	response.JSON(
