@@ -3,10 +3,23 @@ package email
 import (
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/Saif724/STAQ/backend/internal/connections"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
 	"github.com/Saif724/STAQ/backend/internal/shared/response"
 )
+
+type connectionResponse struct {
+	ID                string    `json:"id"`
+	UserID            string    `json:"user_id"`
+	Provider          string    `json:"provider"`
+	ProviderAccountID string    `json:"provider_account_id"`
+	AccountEmail      string    `json:"account_email"`
+	Scopes            []string  `json:"scopes"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
 
 type Handler struct {
 	service *Service
@@ -110,9 +123,24 @@ func (h *Handler) CompleteGmailAuthorization(
 		http.StatusOK,
 		map[string]any{
 			"user_id":       userID,
-			"connection":    connection,
+			"connection":    toConnectionResponst(connection),
 			"provider":      connection.Provider,
 			"account_email": connection.AccountEmail,
 		},
 	)
+}
+
+func toConnectionResponst(
+	connection *connections.Connection,
+) connectionResponse {
+	return connectionResponse{
+		ID:                connection.ID,
+		UserID:            connection.UserID,
+		Provider:          connection.Provider,
+		ProviderAccountID: connection.ProviderAccountID,
+		AccountEmail:      connection.AccountEmail,
+		Scopes:            connection.Scopes,
+		CreatedAt:         connection.CreatedAt,
+		UpdatedAt:         connection.UpdatedAt,
+	}
 }

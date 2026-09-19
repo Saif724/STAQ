@@ -161,7 +161,7 @@ func main() {
 
 	actionRegistry.Register(
 		actions.TypeEmail,
-		emailAction.NewExecutor(),
+		emailAction.NewExecutor(gmailIntegrationService),
 	)
 
 	actionRegistry.Register(

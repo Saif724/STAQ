@@ -10,13 +10,14 @@ import (
 	"time"
 
 	"github.com/Saif724/STAQ/backend/internal/actions"
-	"github.com/Saif724/STAQ/backend/internal/actions/email"
+	emailAction "github.com/Saif724/STAQ/backend/internal/actions/email"
 	httpaction "github.com/Saif724/STAQ/backend/internal/actions/http"
 	"github.com/Saif724/STAQ/backend/internal/actions/reminder"
 	"github.com/Saif724/STAQ/backend/internal/actions/shell"
 	"github.com/Saif724/STAQ/backend/internal/broker"
 	"github.com/Saif724/STAQ/backend/internal/executions"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 )
 
@@ -47,7 +48,9 @@ func New(
 	}
 }
 
-func NewRegistry() *actions.Registry {
+func NewRegistry(
+	emailSender emailAction.Sender,
+) *actions.Registry {
 	registry := actions.NewRegistry()
 
 	registry.Register(
@@ -57,7 +60,7 @@ func NewRegistry() *actions.Registry {
 
 	registry.Register(
 		actions.TypeEmail,
-		email.NewExecutor(),
+		emailAction.NewExecutor(emailSender),
 	)
 
 	registry.Register(
@@ -83,10 +86,19 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.logger.Info().Msg("worker started")
 
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
 		if err := w.processOne(ctx); err != nil {
 			if errors.Is(err, context.Canceled) ||
 				errors.Is(err, context.DeadlineExceeded) {
 				return err
+			}
+
+			if errors.Is(err, redis.Nil) {
+				continue
 			}
 
 			w.logger.Error().
@@ -99,7 +111,7 @@ func (w *Worker) Run(ctx context.Context) error {
 func (w *Worker) processOne(ctx context.Context) error {
 	result, err := w.broker.Client().BRPop(
 		ctx,
-		0,
+		5*time.Second,
 		broker.TaskQueue,
 	).Result()
 

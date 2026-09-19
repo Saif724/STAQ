@@ -122,3 +122,29 @@ func validateRequired(value string, fieldName string) error {
 
 	return nil
 }
+
+func (s *Service) FindByIDAndUser(
+	ctx context.Context,
+	connectionID string,
+	userID string,
+) (*Connection, error) {
+	if s == nil || s.repository == nil {
+		return nil, errors.New("connection service is not configured")
+	}
+
+	return s.repository.FindByIDAndUser(ctx, connectionID, userID)
+}
+
+func (s *Service) UpdateToken(
+	ctx context.Context,
+	connectionID string,
+	accessTokenEncrypted string,
+	refreshTokenEncrypted *string,
+	tokenExpiresAt *time.Time,
+) error {
+	if s == nil || s.repository == nil {
+		return errors.New("connection service is not configured")
+	}
+
+	return s.repository.UpdateTokens(ctx, connectionID, accessTokenEncrypted, refreshTokenEncrypted, tokenExpiresAt)
+}

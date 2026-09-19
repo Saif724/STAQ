@@ -9,11 +9,14 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/actions"
 	"github.com/Saif724/STAQ/backend/internal/broker"
 	"github.com/Saif724/STAQ/backend/internal/config"
+	"github.com/Saif724/STAQ/backend/internal/connections"
 	"github.com/Saif724/STAQ/backend/internal/database"
 	"github.com/Saif724/STAQ/backend/internal/executions"
+	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/logger"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/workers"
+	"github.com/Saif724/STAQ/backend/pkg/securetoken"
 )
 
 func main() {
@@ -64,7 +67,25 @@ func main() {
 	executionsRepository := executions.NewRepository(db)
 	executionsService := executions.NewService(executionsRepository)
 
-	registry := workers.NewRegistry()
+	encryptor, err := securetoken.NewEncryptorFromBase64(cfg.Encryption.Key)
+	if err != nil {
+		logg.Fatal().
+			Err(err).
+			Msg("Failed to initialize token encryptor")
+	}
+
+	connectionsRepository := connections.NewRepository(db)
+	connectionsService := connections.NewService(connectionsRepository)
+
+	gmailOAuthService := emailIntegration.NewGmailOAuthService(cfg.Google, redisClient.Client())
+
+	gmailIntegrationService := emailIntegration.NewService(
+		gmailOAuthService,
+		connectionsService,
+		encryptor,
+	)
+
+	registry := workers.NewRegistry(gmailIntegrationService)
 	worker := workers.New(
 		redisClient,
 		tasksRepository,
@@ -86,7 +107,7 @@ func main() {
 			err != context.DeadlineExceeded {
 			logg.Error().
 				Err(err).
-				Msg("worder exited with error")
+				Msg("worker exited with error")
 		}
 	}
 
