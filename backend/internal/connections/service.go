@@ -148,3 +148,15 @@ func (s *Service) UpdateToken(
 
 	return s.repository.UpdateTokens(ctx, connectionID, accessTokenEncrypted, refreshTokenEncrypted, tokenExpiresAt)
 }
+
+func (s *Service) FindByProviderAccount(
+	ctx context.Context,
+	provider string,
+	providerAccountID string,
+) (*Connection, error) {
+	if s == nil || s.repository == nil {
+		return nil, errors.New("connection service is not configured")
+	}
+
+	return s.repository.FindByProviderAccount(ctx, provider, providerAccountID)
+}

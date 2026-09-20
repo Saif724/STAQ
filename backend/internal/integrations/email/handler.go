@@ -1,6 +1,7 @@
 package email
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -100,11 +101,12 @@ func (h *Handler) CompleteGmailAuthorization(
 	userID, connection, err := h.service.CompleteGmailAuthorization(r.Context(), state, code)
 
 	if err != nil {
+		fmt.Printf("Gmail callback error: %v\n", err)
 		response.ErrorJSON(
 			w,
 			http.StatusBadRequest,
 			"GMAIL_CONNECTION_FAILED",
-			"Failed to connect Gmail account",
+			err.Error(),
 		)
 		return
 	}

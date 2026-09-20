@@ -288,7 +288,7 @@ func (r *Repository) UpdateTokens(
 		UPDATE connections
 		SET
 			access_token_encrypted = $1,
-			refresh_token_encrypted = COALESCE($2. refresh_token_encrypted),
+			refresh_token_encrypted = COALESCE($2, refresh_token_encrypted),
 			token_expires_at = $3,
 			updated_at = $4
 		WHERE id = $5

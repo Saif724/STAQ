@@ -98,6 +98,41 @@ func (s *Service) CompleteGmailAuthorization(
 		tokenExpiredAt = &expiry
 	}
 
+	existingConnection, err := s.connections.FindByProviderAccount(
+		ctx,
+		connections.ProviderGoogle,
+		account.ID,
+	)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to find existing Gmail connection: %w", err)
+	}
+
+	if existingConnection != nil {
+		if existingConnection.UserID != userID {
+			return "", nil, fmt.Errorf("this Google account is already connected to another user")
+		}
+
+		err := s.connections.UpdateToken(
+			ctx,
+			existingConnection.ID,
+			encryptedAccessToken,
+			encryptedRefreshToken,
+			tokenExpiredAt,
+		)
+
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to update Gmail connection: %w", err)
+		}
+
+		existingConnection.AccountEmail = account.Email
+		existingConnection.AccessTokenEncrypted = encryptedAccessToken
+		existingConnection.RefreshTokenEncrypted = encryptedRefreshToken
+		existingConnection.TokenExpiresAt = tokenExpiredAt
+		existingConnection.UpdatedAt = time.Now().UTC()
+
+		return strings.TrimSpace(userID), existingConnection, nil
+	}
+
 	connection, err := s.connections.Create(
 		ctx,
 		userID,
