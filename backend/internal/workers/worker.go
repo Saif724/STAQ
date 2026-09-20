@@ -111,7 +111,7 @@ func (w *Worker) Run(ctx context.Context) error {
 func (w *Worker) processOne(ctx context.Context) error {
 	result, err := w.broker.Client().BRPop(
 		ctx,
-		5*time.Second,
+		2*time.Second,
 		broker.TaskQueue,
 	).Result()
 
