@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
 	"github.com/Saif724/STAQ/backend/internal/actions"
 )
+
+const maxResponseBodySize = 64 * 1024
 
 type Executor struct {
 	client *http.Client
@@ -59,7 +62,8 @@ func (e *Executor) Execute(
 		return nil, errors.New("unsupported http method")
 	}
 
-	if strings.TrimSpace(config.URL) == "" {
+	url := strings.TrimSpace(config.URL)
+	if url == "" {
 		return nil, errors.New("http url is required")
 	}
 
@@ -72,12 +76,12 @@ func (e *Executor) Execute(
 	req, err := http.NewRequestWithContext(
 		ctx,
 		method,
-		config.URL,
+		url,
 		body,
 	)
 
 	if err != nil {
-		return nil, errors.New("failed to create http request")
+		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 
 	for key, value := range config.Headers {
@@ -86,14 +90,35 @@ func (e *Executor) Execute(
 
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("http request failed: %w", err)
 	}
-	defer req.Body.Close()
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read http response: %w", err)
+	}
+
+	truncated := len(responseBody) > maxResponseBodySize
+	if truncated {
+		responseBody = responseBody[:maxResponseBodySize]
+	}
+
+	resultData := map[string]any{
+		"status_code": resp.StatusCode,
+		"body":        string(responseBody),
+		"truncated":   truncated,
+	}
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		return &actions.ExecutionResult{
+			Message: "http action failed",
+			Data:    resultData,
+		}, fmt.Errorf("http request returned status %d", resp.StatusCode)
+	}
 
 	return &actions.ExecutionResult{
 		Message: "http action executed",
-		Data: map[string]any{
-			"status_code": resp.StatusCode,
-		},
+		Data:    resultData,
 	}, nil
 }
