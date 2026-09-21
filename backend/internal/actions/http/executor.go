@@ -42,7 +42,7 @@ func (e *Executor) Execute(
 	var config Configuration
 
 	if err := json.Unmarshal(configuration, &config); err != nil {
-		return nil, errors.New("invalid http configuraion")
+		return nil, errors.New("invalid http configuration")
 	}
 
 	method := strings.ToUpper(strings.TrimSpace(config.Method))

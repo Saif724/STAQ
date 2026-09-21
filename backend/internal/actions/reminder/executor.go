@@ -26,7 +26,7 @@ func (s *Executor) Execute(
 	var config Configuration
 
 	if err := json.Unmarshal(configuration, &config); err != nil {
-		return nil, errors.New("invalid reminder configuraion")
+		return nil, errors.New("invalid reminder configuration")
 	}
 
 	if config.Message == "" {

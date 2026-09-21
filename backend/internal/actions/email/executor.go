@@ -50,7 +50,7 @@ func (e *Executor) Execute(
 	var config Configuration
 
 	if err := json.Unmarshal(configuration, &config); err != nil {
-		return nil, errors.New("invalid email configuraion")
+		return nil, errors.New("invalid email configuration")
 	}
 
 	config.ConnectionID = strings.TrimSpace(config.ConnectionID)

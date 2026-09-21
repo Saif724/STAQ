@@ -37,7 +37,7 @@ func (e *Executor) Execute(
 	var config Configuration
 
 	if err := json.Unmarshal(configuration, &config); err != nil {
-		return nil, errors.New("invalid shell configuraion")
+		return nil, errors.New("invalid shell configuration")
 	}
 
 	if config.Command == "" {
