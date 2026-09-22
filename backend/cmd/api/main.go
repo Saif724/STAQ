@@ -19,6 +19,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/config"
 	"github.com/Saif724/STAQ/backend/internal/connections"
 	"github.com/Saif724/STAQ/backend/internal/database"
+	"github.com/Saif724/STAQ/backend/internal/executions"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/logger"
@@ -152,6 +153,10 @@ func main() {
 	actionsService := actions.NewService(actionsRepository, tasksService)
 	actionsHandler := actions.NewHandler(actionsService)
 
+	executionsRepository := executions.NewRepository(db)
+	executionsService := executions.NewService(executionsRepository)
+	executionsHandler := executions.NewHandler(executionsService)
+
 	actionRegistry := actions.NewRegistry()
 
 	actionRegistry.Register(
@@ -190,6 +195,7 @@ func main() {
 		queuesHandler,
 		triggersHandler,
 		actionsHandler,
+		executionsHandler,
 		logg,
 		cfg.App.FrontendURL,
 	)

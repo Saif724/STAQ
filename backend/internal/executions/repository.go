@@ -115,6 +115,60 @@ func (r *Repository) FindByID(
 	return &execution, nil
 }
 
+func (r *Repository) FindByIDAndUser(
+	ctx context.Context,
+	executionID string,
+	userID string,
+) (*Execution, error) {
+	const query = `
+		SELECT
+			e.id,
+			e.task_id,
+			e.trigger_id,
+			e.status,
+			e.started_at,
+			e.completed_at,
+			e.duration_ms,
+			e.retry_count,
+			e.error_message,
+			e.created_at
+		FROM executions e
+		INNER JOIN tasks t ON t.id = e.task_id
+		WHERE e.id = $1
+			AND t.user_id = $2
+	`
+
+	var execution Execution
+
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		executionID,
+		userID,
+	).Scan(
+		&execution.ID,
+		&execution.TaskID,
+		&execution.TriggerID,
+		&execution.Status,
+		&execution.StartedAt,
+		&execution.CompletedAt,
+		&execution.DurationMs,
+		&execution.RetryCount,
+		&execution.ErrorMessage,
+		&execution.CreatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrExecutionNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to find execution: %w", err)
+	}
+
+	return &execution, nil
+}
+
 func (r *Repository) Update(
 	ctx context.Context,
 	execution *Execution,
@@ -202,6 +256,57 @@ func (r *Repository) FindLogs(
 	`
 
 	rows, err := r.db.Query(ctx, query, executionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fing execution logs: %w", err)
+	}
+	defer rows.Close()
+
+	logs := make([]ExecutionLog, 0)
+
+	for rows.Next() {
+		var log ExecutionLog
+
+		if err := rows.Scan(
+			&log.ID,
+			&log.ExecutionID,
+			&log.LogLevel,
+			&log.Message,
+			&log.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan execution log: %w", err)
+		}
+
+		logs = append(logs, log)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate execution logs: %w", err)
+	}
+
+	return logs, nil
+}
+
+func (r *Repository) FindLogsByUser(
+	ctx context.Context,
+	executionID string,
+	userID string,
+) ([]ExecutionLog, error) {
+	const query = `
+		SELECT
+			el.id,
+			el.execution_id,
+			el.log_level,
+			el.message,
+			el.created_at
+		FROM execution_logs el
+		INNER JOIN executions e ON e.id = el.execution_id
+		INNER JOIN tasks t ON t.id = e.task_id
+		WHERE el.execution_id = $1
+			AND t.user_id = $2
+		ORDER BY created_at ASC
+	`
+
+	rows, err := r.db.Query(ctx, query, executionID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fing execution logs: %w", err)
 	}

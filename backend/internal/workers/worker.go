@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -72,10 +73,15 @@ func NewRegistry(
 		),
 	)
 
+	echoPath, err := exec.LookPath("echo")
+	if err != nil {
+		panic("echo command not found")
+	}
+
 	registry.Register(
 		actions.TypeShell,
 		shell.NewExecutor(
-			[]string{},
+			[]string{echoPath},
 		),
 	)
 
@@ -308,17 +314,41 @@ func (w *Worker) executeActions(
 			message = "action executed successfully"
 		}
 
-		_ = w.executionService.Log(
+		if result.Data != nil {
+			resultJSON, err := json.Marshal(map[string]any{
+				"message": message,
+				"data":    result.Data,
+			})
+
+			if err != nil {
+				w.logger.Warn().
+					Err(err).
+					Str("execution_id", execution.ID).
+					Str("action_id", action.ID).
+					Msg("failed to serialize action result")
+			} else {
+				message = string(resultJSON)
+			}
+		}
+
+		if err := w.executionService.Log(
 			ctx,
 			execution.ID,
 			executions.LogInfo,
 			message,
-		)
+		); err != nil {
+			w.logger.Warn().
+				Err(err).
+				Str("execution_id", execution.ID).
+				Str("action_id", action.ID).
+				Msg("failed to persist action result")
+		}
 
 		w.logger.Info().
 			Str("execution_id", execution.ID).
 			Str("action_id", action.ID).
 			Str("action_type", action.ActionType).
+			Interface("result", result.Data).
 			Msg("action executed")
 	}
 

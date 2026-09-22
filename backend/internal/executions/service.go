@@ -128,11 +128,43 @@ func (s *Service) GetByID(
 	return s.repository.FindByID(ctx, executionID)
 }
 
+func (s *Service) GetByIDAndUser(
+	ctx context.Context,
+	executionID string,
+	userID string,
+) (*Execution, error) {
+	if strings.TrimSpace(executionID) == "" {
+		return nil, errors.New("execution id is required")
+	}
+
+	if strings.TrimSpace(userID) == "" {
+		return nil, errors.New("user id is required")
+	}
+
+	return s.repository.FindByIDAndUser(ctx, executionID, userID)
+}
+
 func (s *Service) ListLogs(
 	ctx context.Context,
 	executionID string,
 ) ([]ExecutionLog, error) {
 	return s.repository.FindLogs(ctx, executionID)
+}
+
+func (s *Service) ListLogsByUser(
+	ctx context.Context,
+	executionID string,
+	userID string,
+) ([]ExecutionLog, error) {
+	if strings.TrimSpace(executionID) == "" {
+		return nil, errors.New("execution id is required")
+	}
+
+	if strings.TrimSpace(userID) == "" {
+		return nil, errors.New("user id is required")
+	}
+
+	return s.repository.FindLogsByUser(ctx, executionID, userID)
 }
 
 func durationMs(start, end time.Time) *int64 {

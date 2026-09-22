@@ -5,6 +5,7 @@ import (
 
 	"github.com/Saif724/STAQ/backend/internal/actions"
 	"github.com/Saif724/STAQ/backend/internal/auth"
+	"github.com/Saif724/STAQ/backend/internal/executions"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
@@ -26,6 +27,7 @@ func New(
 	queueHandler *queues.Handler,
 	triggersHandler *triggers.Handler,
 	actionsHandler *actions.Handler,
+	executionHandler *executions.Handler,
 	logg zerolog.Logger,
 	frontendURL string,
 ) http.Handler {
@@ -177,6 +179,19 @@ func New(
 		"DELETE /actions/{id}",
 		middleware.Auth(jwtManager)(
 			http.HandlerFunc(actionsHandler.Delete),
+		),
+	)
+
+	mux.Handle(
+		"GET /executions/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(executionHandler.Get),
+		),
+	)
+	mux.Handle(
+		"GET /executions/{id}/logs",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(executionHandler.ListLogs),
 		),
 	)
 
