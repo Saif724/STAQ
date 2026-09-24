@@ -109,15 +109,21 @@ func New(
 	)
 	mux.Handle(
 		"POST /queues",
-		http.HandlerFunc(queueHandler.Create),
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(queueHandler.Create),
+		),
 	)
 	mux.Handle(
 		"PUT /queues/{id}",
-		http.HandlerFunc(queueHandler.Update),
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(queueHandler.Update),
+		),
 	)
 	mux.Handle(
 		"DELETE /queues/{id}",
-		http.HandlerFunc(queueHandler.Delete),
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(queueHandler.Delete),
+		),
 	)
 
 	mux.Handle(

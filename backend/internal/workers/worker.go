@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Saif724/STAQ/backend/internal/actions"
@@ -23,8 +24,9 @@ import (
 )
 
 const (
-	initialRetryDelay = 1 * time.Second
-	maxRetryDelay     = 30 * time.Second
+	initialRetryDelay  = 1 * time.Second
+	maxRetryDelay      = 30 * time.Second
+	defaultConcurrency = 4
 )
 
 type Worker struct {
@@ -94,29 +96,52 @@ func NewRegistry(
 }
 
 func (w *Worker) Run(ctx context.Context) error {
-	w.logger.Info().Msg("worker started")
+	w.logger.Info().
+		Int("concurrency", defaultConcurrency).
+		Msg("worker pool started")
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		if err := w.processOne(ctx); err != nil {
-			if errors.Is(err, context.Canceled) ||
-				errors.Is(err, context.DeadlineExceeded) {
-				return err
+	var wg sync.WaitGroup
+
+	for i := 0; i < defaultConcurrency; i++ {
+		wg.Add(1)
+
+		go func(workerID int) {
+			defer wg.Done()
+
+			w.logger.Info().
+				Int("worker_id", workerID).
+				Msg("worker started")
+
+			for {
+				if err := w.processOne(ctx); err != nil {
+					if errors.Is(err, context.Canceled) ||
+						errors.Is(err, context.DeadlineExceeded) {
+						w.logger.Info().
+							Int("worker_id", workerID).
+							Msg("worker stopped")
+
+						return
+					}
+
+					if errors.Is(err, redis.Nil) {
+						continue
+					}
+
+					w.logger.Error().
+						Int("worker_id", workerID).
+						Err(err).
+						Msg("failed to process task job")
+				}
 			}
-
-			if errors.Is(err, redis.Nil) {
-				continue
-			}
-
-			w.logger.Error().
-				Err(err).
-				Msg("failed to process task job")
-		}
+		}(i + 1)
 	}
+
+	wg.Wait()
+
+	w.logger.Info().Msg("worker pool stopped")
+
+	return ctx.Err()
+
 }
 
 func (w *Worker) processOne(ctx context.Context) error {

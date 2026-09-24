@@ -14,6 +14,10 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("JWT_SECRET is required")
 	}
 
+	if c.Encryption.Key == "" {
+		return fmt.Errorf("TOKEN_ENCRYPTION_KEY is required")
+	}
+
 	if c.App.Port == "" {
 		return fmt.Errorf("PORT is required")
 	}
