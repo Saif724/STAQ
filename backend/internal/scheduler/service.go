@@ -15,6 +15,7 @@ import (
 
 const (
 	DefaultPollInterval = 10 * time.Second
+	maxCatchUpWindow    = 2 * time.Minute
 )
 
 type Service struct {
@@ -108,24 +109,24 @@ func (s *Service) processOne(
 			return false, nil
 		}
 
-		return false, fmt.Errorf("failed to fing due trigger: %w", err)
+		return false, fmt.Errorf("failed to find due trigger: %w", err)
 	}
 
 	scheduledTime := trigger.NextRunAt
 
-	job := broker.TaskJob{
-		ID:          uuid.NewString(),
-		TaskID:      trigger.TaskID,
-		TriggerID:   trigger.ID,
-		ScheduledAt: scheduledTime,
-		CreatedAt:   now,
-	}
-
-	if err := s.broker.PublishTaskJob(ctx, job); err != nil {
-		return false, fmt.Errorf("failed to publish task job: %w", err)
-	}
-
 	if trigger.TriggerType == triggers.TypeOnce {
+		job := broker.TaskJob{
+			ID:          uuid.NewString(),
+			TaskID:      trigger.TaskID,
+			TriggerID:   trigger.ID,
+			ScheduledAt: scheduledTime,
+			CreatedAt:   now,
+		}
+
+		if err := s.broker.PublishTaskJob(ctx, job); err != nil {
+			return false, fmt.Errorf("failed to publish task job: %w", err)
+		}
+
 		trigger.LastRunAt = &now
 		trigger.IsActive = false
 		trigger.UpdatedAt = now
@@ -154,12 +155,41 @@ func (s *Service) processOne(
 		return false, fmt.Errorf("failed to calculate next run: %w", err)
 	}
 
+	stale := now.Sub(scheduledTime) > maxCatchUpWindow
+
 	trigger.LastRunAt = &now
 	trigger.NextRunAt = nextRunAt
 	trigger.UpdatedAt = now
 
 	if err := s.updateTrigger(ctx, tx, trigger); err != nil {
 		return false, fmt.Errorf("failed to update trigger schedule: %w", err)
+	}
+
+	if stale {
+		if err := tx.Commit(ctx); err != nil {
+			return false, fmt.Errorf("failed to commit trigger resync: %w", err)
+		}
+
+		s.logger.Warn().
+			Str("trigger_id", trigger.ID).
+			Str("task_id", trigger.TaskID).
+			Time("missed_run", scheduledTime).
+			Time("next_run_at", nextRunAt).
+			Msg("skipped stale trigger, resynced without dispatching")
+
+		return true, nil
+	}
+
+	job := broker.TaskJob{
+		ID:          uuid.NewString(),
+		TaskID:      trigger.TaskID,
+		TriggerID:   trigger.ID,
+		ScheduledAt: scheduledTime,
+		CreatedAt:   now,
+	}
+
+	if err := s.broker.PublishTaskJob(ctx, job); err != nil {
+		return false, fmt.Errorf("failed to publish task job: %w", err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {

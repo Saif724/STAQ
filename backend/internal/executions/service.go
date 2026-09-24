@@ -23,6 +23,7 @@ func (s *Service) Start(
 	ctx context.Context,
 	taskID string,
 	triggerID string,
+	scheduledAt time.Time,
 ) (*Execution, error) {
 	if strings.TrimSpace(taskID) == "" {
 		return nil, errors.New("task id is required")
@@ -32,23 +33,55 @@ func (s *Service) Start(
 		return nil, errors.New("trigger id is required")
 	}
 
+	if scheduledAt.IsZero() {
+		return nil, errors.New("scheduled time is required")
+	}
+
 	now := time.Now().UTC()
 
 	execution := &Execution{
-		ID:         uuid.NewString(),
-		TaskID:     taskID,
-		TriggerID:  triggerID,
-		Status:     StatusRunning,
-		StartedAt:  now,
-		RetryCount: 0,
-		CreatedAt:  now,
+		ID:          uuid.NewString(),
+		TaskID:      taskID,
+		TriggerID:   triggerID,
+		ScheduledAt: scheduledAt.UTC(),
+		Status:      StatusRunning,
+		StartedAt:   now,
+		RetryCount:  0,
+		CreatedAt:   now,
 	}
 
-	if err := s.repository.Create(ctx, execution); err != nil {
-		return nil, err
+	err := s.repository.Create(ctx, execution)
+
+	if err == nil {
+		return execution, nil
 	}
 
-	return execution, nil
+	if errors.Is(err, ErrExecutionAlreadyExist) {
+		existing, findErr := s.repository.FindByTriggerAndScheduledAt(
+			ctx,
+			triggerID,
+			scheduledAt.UTC(),
+		)
+		if findErr != nil {
+			return nil, findErr
+		}
+
+		return existing, ErrExecutionAlreadyExist
+	}
+
+	return nil, err
+}
+
+func (s *Service) IncrementRetryCount(
+	ctx context.Context,
+	execution *Execution,
+) error {
+	execution.RetryCount++
+
+	return s.repository.Update(
+		ctx,
+		execution,
+	)
 }
 
 func (s *Service) CompleteSuccess(
@@ -88,6 +121,25 @@ func (s *Service) CompleteFailure(
 
 	return s.repository.Update(ctx, execution)
 
+}
+
+func (s *Service) CompleteTimeout(
+	ctx context.Context,
+	execution *Execution,
+	err error,
+) error {
+	now := time.Now().UTC()
+
+	execution.Status = StatusTimedOut
+	execution.CompletedAt = &now
+	execution.DurationMs = durationMs(execution.StartedAt, now)
+
+	if err != nil {
+		message := err.Error()
+		execution.ErrorMessage = &message
+	}
+
+	return s.repository.Update(ctx, execution)
 }
 
 func (s *Service) Log(

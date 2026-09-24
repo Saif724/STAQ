@@ -17,6 +17,8 @@ var (
 	ErrInvalidTimezone    = errors.New("invalid timezone")
 	ErrCronRequired       = errors.New("cron expression is required")
 	ErrCronInvalid        = errors.New("invalid cron expression")
+	ErrInvalidStartAt     = errors.New("start_at is required")
+	ErrStartAtInPast      = errors.New("start_at is in the past")
 )
 
 type Service struct {
@@ -62,6 +64,10 @@ func (s *Service) Create(
 
 	if userID == "" {
 		return nil, errors.New("user id is required")
+	}
+
+	if input.StartAt.IsZero() {
+		return nil, ErrInvalidStartAt
 	}
 
 	if _, err := s.taskService.GetByID(ctx, taskID, userID); err != nil {
@@ -188,6 +194,10 @@ func (s *Service) Update(
 		return nil, errors.New("user id is required")
 	}
 
+	if input.StartAt.IsZero() {
+		return nil, ErrInvalidStartAt
+	}
+
 	existing, err := s.repository.FindByID(ctx, input.ID)
 	if err != nil {
 		return nil, err
@@ -263,6 +273,12 @@ func (s *Service) Delete(
 		return errors.New("trigger id is required")
 	}
 
+	userID = strings.TrimSpace(userID)
+
+	if userID == "" {
+		return errors.New("user id is required")
+	}
+
 	trigger, err := s.repository.FindByID(ctx, triggerID)
 	if err != nil {
 		return err
@@ -284,24 +300,23 @@ func (s *Service) CalculateNextRun(
 		return time.Time{}, ErrInvalidTimezone
 	}
 
-	localFrom := from.In(location)
+	scheduledAt := from.In(location)
 
 	switch trigger.TriggerType {
 	case TypeOnce:
 		return time.Time{}, nil
 
 	case TypeDaily:
-		return localFrom.AddDate(0, 0, 1).UTC(), nil
+		return scheduledAt.AddDate(0, 0, 1).UTC(), nil
 
 	case TypeWeekly:
-		return localFrom.AddDate(0, 0, 7).UTC(), nil
+		return scheduledAt.AddDate(0, 0, 7).UTC(), nil
 
 	case TypeMonthly:
-		return localFrom.AddDate(0, 1, 0).UTC(), nil
+		return addOneMonthPreservingDay(scheduledAt).UTC(), nil
 
 	case TypeYearly:
-		return localFrom.AddDate(1, 0, 0).UTC(), nil
-
+		return addOneYearPreservingDate(scheduledAt).UTC(), nil
 	case TypeCron:
 		if trigger.CronExpression == nil ||
 			strings.TrimSpace(*trigger.CronExpression) == "" {
@@ -314,7 +329,8 @@ func (s *Service) CalculateNextRun(
 		if err != nil {
 			return time.Time{}, ErrCronInvalid
 		}
-		return schedule.Next(localFrom).UTC(), nil
+
+		return schedule.Next(scheduledAt).UTC(), nil
 	}
 
 	return time.Time{}, ErrInvalidTriggerType
@@ -359,6 +375,10 @@ func validateSchedule(
 
 		expression := strings.TrimSpace(*cronExpression)
 
+		if expression == "" {
+			return nil, ErrCronRequired
+		}
+
 		if _, err := cron.ParseStandard(expression); err != nil {
 			return nil, ErrCronInvalid
 		}
@@ -375,21 +395,27 @@ func calculateFirstRun(
 	startAt time.Time,
 	location *time.Location,
 ) (time.Time, error) {
+	now := time.Now().In(location)
+
 	switch triggerType {
 	case TypeOnce:
+		if !startAt.After(now) {
+			return time.Time{}, ErrStartAtInPast
+		}
+
 		return startAt, nil
 
 	case TypeDaily:
-		return startAt, nil
+		return nextDaily(startAt, now), nil
 
 	case TypeWeekly:
-		return startAt, nil
+		return nextWeekly(startAt, now), nil
 
 	case TypeMonthly:
-		return startAt, nil
+		return nextMonthly(startAt, now), nil
 
 	case TypeYearly:
-		return startAt, nil
+		return nextYearly(startAt, now), nil
 
 	case TypeCron:
 		if cronExpression == nil {
@@ -403,12 +429,100 @@ func calculateFirstRun(
 			return time.Time{}, fmt.Errorf("%w: %v", ErrCronInvalid, err)
 		}
 
-		return schedule.Next(
-			startAt.Add(-time.Nanosecond),
-		).In(location), nil
+		base := startAt
+		if !base.After(now) {
+			base = now
+		}
+
+		return schedule.Next(base).In(location), nil
 	}
 
 	return time.Time{}, ErrInvalidTriggerType
+}
+
+func nextDaily(startAt, now time.Time) time.Time {
+	next := startAt
+
+	for !next.After(now) {
+		next = next.AddDate(0, 0, 1)
+	}
+
+	return next
+}
+
+func nextWeekly(startAt, now time.Time) time.Time {
+	next := startAt
+
+	for !next.After(now) {
+		next = next.AddDate(0, 0, 7)
+	}
+
+	return next
+}
+
+func nextMonthly(startAt, now time.Time) time.Time {
+	next := startAt
+
+	for !next.After(now) {
+		next = addOneMonthPreservingDay(next)
+	}
+
+	return next
+}
+
+func nextYearly(startAt, now time.Time) time.Time {
+	next := startAt
+
+	for !next.After(now) {
+		next = addOneYearPreservingDate(next)
+	}
+
+	return next
+}
+
+func addOneMonthPreservingDay(t time.Time) time.Time {
+	year := t.Year()
+	month := t.Month() + 1
+
+	if month > time.December {
+		month = time.January
+		year++
+	}
+
+	day := t.Day()
+	lastDay := daysInMonth(year, month)
+
+	if day > lastDay {
+		day = lastDay
+	}
+
+	return time.Date(year, month, day, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+}
+func addOneYearPreservingDate(t time.Time) time.Time {
+	year := t.Year() + 1
+	month := t.Month()
+	day := t.Day()
+
+	lastDay := daysInMonth(year, month)
+
+	if day > lastDay {
+		day = lastDay
+	}
+
+	return time.Date(year, month, day, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+}
+
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(
+		year,
+		month+1,
+		0,
+		0,
+		0,
+		0,
+		0,
+		time.UTC,
+	).Day()
 }
 
 func (s *Service) GetByIDForScheduler(

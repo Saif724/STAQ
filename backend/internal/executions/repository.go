@@ -6,10 +6,14 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrExecutionNotFound = errors.New("execution not found")
+var (
+	ErrExecutionNotFound     = errors.New("execution not found")
+	ErrExecutionAlreadyExist = errors.New("execution already exists")
+)
 
 type Repository struct {
 	db *pgxpool.Pool
@@ -30,6 +34,7 @@ func (r *Repository) Create(
 			id,
 			task_id,
 			trigger_id,
+			scheduled_at,
 			status,
 			started_at,
 			completed_at,
@@ -40,7 +45,7 @@ func (r *Repository) Create(
 		)
 		VALUES (
 			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9, $10
+			$6, $7, $8, $9, $10, $11
 		)
 	`
 
@@ -50,6 +55,7 @@ func (r *Repository) Create(
 		execution.ID,
 		execution.TaskID,
 		execution.TriggerID,
+		execution.ScheduledAt,
 		execution.Status,
 		execution.StartedAt,
 		execution.CompletedAt,
@@ -59,6 +65,14 @@ func (r *Repository) Create(
 		execution.CreatedAt,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+
+		if errors.As(err, &pgErr) &&
+			pgErr.Code == "23505" &&
+			pgErr.ConstraintName == "uq_executions_trigger_scheduled" {
+			return ErrExecutionAlreadyExist
+		}
+
 		return fmt.Errorf("failed to create execution: %w", err)
 	}
 
@@ -74,6 +88,7 @@ func (r *Repository) FindByID(
 			id,
 			task_id,
 			trigger_id,
+			scheduled_at,
 			status,
 			started_at,
 			completed_at,
@@ -95,6 +110,7 @@ func (r *Repository) FindByID(
 		&execution.ID,
 		&execution.TaskID,
 		&execution.TriggerID,
+		&execution.ScheduledAt,
 		&execution.Status,
 		&execution.StartedAt,
 		&execution.CompletedAt,
@@ -115,6 +131,61 @@ func (r *Repository) FindByID(
 	return &execution, nil
 }
 
+func (r *Repository) FindByTriggerAndScheduledAt(
+	ctx context.Context,
+	triggerID string,
+	scheduledAt interface{},
+) (*Execution, error) {
+	const query = `
+		SELECT
+			id,
+			task_id,
+			trigger_id,
+			scheduled_at,
+			status,
+			started_at,
+			completed_at,
+			duration_ms,
+			retry_count,
+			error_message,
+			created_at
+		FROM executions
+		WHERE trigger_id = $1
+			AND scheduled_at = $2
+	`
+
+	var execution Execution
+
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		triggerID,
+		scheduledAt,
+	).Scan(
+		&execution.ID,
+		&execution.TaskID,
+		&execution.TriggerID,
+		&execution.ScheduledAt,
+		&execution.Status,
+		&execution.StartedAt,
+		&execution.CompletedAt,
+		&execution.DurationMs,
+		&execution.RetryCount,
+		&execution.ErrorMessage,
+		&execution.CreatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrExecutionNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to find execution by trigger and scheduled time: %w", err)
+	}
+
+	return &execution, nil
+}
+
 func (r *Repository) FindByIDAndUser(
 	ctx context.Context,
 	executionID string,
@@ -125,6 +196,7 @@ func (r *Repository) FindByIDAndUser(
 			e.id,
 			e.task_id,
 			e.trigger_id,
+			e.scheduled_at,
 			e.status,
 			e.started_at,
 			e.completed_at,
@@ -149,6 +221,7 @@ func (r *Repository) FindByIDAndUser(
 		&execution.ID,
 		&execution.TaskID,
 		&execution.TriggerID,
+		&execution.ScheduledAt,
 		&execution.Status,
 		&execution.StartedAt,
 		&execution.CompletedAt,

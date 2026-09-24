@@ -224,6 +224,30 @@ func handleError(w http.ResponseWriter, err error) {
 			"invalid trigger type",
 		)
 
+	case errors.Is(err, ErrInvalidTimezone):
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_TIMEZONE",
+			"invalid timezone",
+		)
+
+	case errors.Is(err, ErrInvalidStartAt):
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"INVALID_START_AT",
+			"start_at is required",
+		)
+
+	case errors.Is(err, ErrStartAtInPast):
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"START_AT_IN_PAST",
+			"start_at must be in the future for ONCE triggers",
+		)
+
 	case errors.Is(err, ErrCronRequired):
 		response.ErrorJSON(
 			w,
@@ -238,6 +262,14 @@ func handleError(w http.ResponseWriter, err error) {
 			http.StatusBadRequest,
 			"INVALID_CRON",
 			"invalid cron expression",
+		)
+
+	case strings.Contains(err.Error(), "cron expression is only allowed"):
+		response.ErrorJSON(
+			w,
+			http.StatusBadRequest,
+			"CRON_NOT_ALLOWED",
+			"cron expression is only allowed for CRON triggers",
 		)
 
 	case strings.Contains(err.Error(), "task not found"):

@@ -90,13 +90,23 @@ func (e *Executor) Execute(
 
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http request failed: %w", err)
+		if errors.Is(err, context.Canceled) ||
+			errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("http request failed: %w", err)
+		}
+
+		return nil, actions.Retryable(fmt.Errorf("http request failed: %w", err))
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read http response: %w", err)
+		if errors.Is(err, context.Canceled) ||
+			errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("failed to read http response: %w", err)
+		}
+
+		return nil, actions.Retryable(fmt.Errorf("failed to read http response: %w", err))
 	}
 
 	truncated := len(responseBody) > maxResponseBodySize
@@ -111,14 +121,37 @@ func (e *Executor) Execute(
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {
+		err := fmt.Errorf("http request returned status %d", resp.StatusCode)
+
+		if isRetryableStatus(resp.StatusCode) {
+			return &actions.ExecutionResult{
+				Message: "http action failed",
+				Data:    resultData,
+			}, actions.Retryable(err)
+		}
+
 		return &actions.ExecutionResult{
 			Message: "http action failed",
 			Data:    resultData,
-		}, fmt.Errorf("http request returned status %d", resp.StatusCode)
+		}, err
 	}
 
 	return &actions.ExecutionResult{
 		Message: "http action executed",
 		Data:    resultData,
 	}, nil
+}
+
+func isRetryableStatus(statusCode int) bool {
+	switch statusCode {
+	case http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusBadGateway,
+		http.StatusServiceUnavailable,
+		http.StatusGatewayTimeout:
+		return true
+
+	default:
+		return false
+	}
 }

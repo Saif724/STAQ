@@ -22,6 +22,11 @@ import (
 	"github.com/rs/zerolog"
 )
 
+const (
+	initialRetryDelay = 1 * time.Second
+	maxRetryDelay     = 30 * time.Second
+)
+
 type Worker struct {
 	broker           *broker.Redis
 	taskRepository   *tasks.Repository
@@ -171,7 +176,18 @@ func (w *Worker) executeJob(
 		ctx,
 		task.ID,
 		job.TriggerID,
+		job.ScheduledAt,
 	)
+
+	if errors.Is(err, executions.ErrExecutionAlreadyExist) {
+		w.logger.Info().
+			Str("task_id", task.ID).
+			Str("trigger_id", job.TriggerID).
+			Time("scheduled_at", job.ScheduledAt).
+			Msg("duplicate scheduled job ignored")
+
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("failed to start execution: %w", err)
 	}
@@ -199,20 +215,25 @@ func (w *Worker) executeJob(
 		task,
 		execution,
 	); err != nil {
-		if updateErr := w.executionService.CompleteFailure(
-			ctx,
-			execution,
-			err,
-		); updateErr != nil {
-			return fmt.Errorf("execution failed and status update failed: %w", updateErr)
+		var completionErr error
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			completionErr = w.executionService.CompleteTimeout(
+				ctx,
+				execution,
+				err,
+			)
+		} else {
+			completionErr = w.executionService.CompleteFailure(
+				ctx,
+				execution,
+				err,
+			)
 		}
 
-		_ = w.executionService.Log(
-			ctx,
-			execution.ID,
-			executions.LogError,
-			err.Error(),
-		)
+		if completionErr != nil {
+			return fmt.Errorf("execution failed and status update failed: %w", completionErr)
+		}
 
 		w.logger.Error().
 			Err(err).
@@ -229,12 +250,17 @@ func (w *Worker) executeJob(
 		return fmt.Errorf("failed to complete execution: %w", err)
 	}
 
-	_ = w.executionService.Log(
+	if err := w.executionService.Log(
 		ctx,
 		execution.ID,
 		executions.LogInfo,
 		"execution completed successfully",
-	)
+	); err != nil {
+		w.logger.Warn().
+			Err(err).
+			Str("execution_id", execution.ID).
+			Msg("failed to persist completion log")
+	}
 
 	w.logger.Info().
 		Str("execution_id", execution.ID).
@@ -265,12 +291,7 @@ func (w *Worker) executeActions(
 		if err != nil {
 			actionErr := fmt.Errorf("executor not found for action type %s: %w", action.ActionType, err)
 
-			_ = w.executionService.Log(
-				ctx,
-				execution.ID,
-				executions.LogError,
-				actionErr.Error(),
-			)
+			w.logActionError(ctx, execution.ID, actionErr)
 
 			if !action.ContinueOnFailure {
 				return actionErr
@@ -279,33 +300,104 @@ func (w *Worker) executeActions(
 			continue
 		}
 
-		actionCtx, cancel := context.WithTimeout(
-			ctx,
-			time.Duration(task.TimeoutSeconds)*time.Second,
-		)
+		var result *actions.ExecutionResult
 
-		result, err := executor.Execute(
-			actionCtx,
-			actionContext,
-			action.Configuration,
-		)
+		actionRetryCount := 0
 
-		cancel()
-
-		if err != nil {
-			actionErr := fmt.Errorf("action %s required: %w", action.ID, err)
-
-			_ = w.executionService.Log(
+		for {
+			actionCtx, cancel := context.WithTimeout(
 				ctx,
-				execution.ID,
-				executions.LogError,
-				actionErr.Error(),
+				time.Duration(task.TimeoutSeconds)*time.Second,
 			)
 
-			if !action.ContinueOnFailure {
-				return actionErr
+			result, err = executor.Execute(
+				actionCtx,
+				actionContext,
+				action.Configuration,
+			)
+
+			cancel()
+
+			if err == nil {
+				break
 			}
 
+			actionErr := fmt.Errorf("action %s failed: %w", action.ID, err)
+
+			result = nil
+
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			if errors.Is(err, context.DeadlineExceeded) ||
+				errors.Is(err, context.Canceled) {
+				w.logActionError(ctx, execution.ID, actionErr)
+
+				if !action.ContinueOnFailure {
+					return actionErr
+				}
+
+				break
+			}
+
+			if !actions.IsRetryable(err) {
+				w.logActionError(ctx, execution.ID, actionErr)
+
+				if !action.ContinueOnFailure {
+					return actionErr
+				}
+
+				break
+			}
+
+			if actionRetryCount >= task.MaxRetries {
+				w.logActionError(ctx, execution.ID, actionErr)
+
+				if !action.ContinueOnFailure {
+					return actionErr
+				}
+
+				break
+			}
+
+			actionRetryCount++
+
+			if err := w.executionService.IncrementRetryCount(
+				ctx,
+				execution,
+			); err != nil {
+				return fmt.Errorf("failed to update retry count: %w", err)
+			}
+
+			delay := retryDelay(actionRetryCount)
+
+			retryMessage := fmt.Sprintf("action %s failed; retrying in %s (%d/%d)", action.ID, delay, actionRetryCount, task.MaxRetries)
+
+			if err := w.executionService.Log(
+				ctx,
+				execution.ID,
+				executions.LogWarning,
+				retryMessage,
+			); err != nil {
+				w.logger.Warn().
+					Err(err).
+					Str("execution_id", execution.ID).
+					Msg("failed to persist retry log")
+			}
+
+			timer := time.NewTimer(delay)
+
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+
+			case <-timer.C:
+			}
+		}
+
+		if result == nil {
 			continue
 		}
 
@@ -353,4 +445,40 @@ func (w *Worker) executeActions(
 	}
 
 	return nil
+}
+
+func retryDelay(retryCount int) time.Duration {
+	if retryCount <= 0 {
+		return initialRetryDelay
+	}
+
+	delay := initialRetryDelay
+
+	for i := 1; i < retryCount; i++ {
+		delay *= 2
+
+		if delay >= maxRetryDelay {
+			return maxRetryDelay
+		}
+	}
+
+	return delay
+}
+
+func (w *Worker) logActionError(
+	ctx context.Context,
+	executionID string,
+	err error,
+) {
+	if logErr := w.executionService.Log(
+		ctx,
+		executionID,
+		executions.LogError,
+		err.Error(),
+	); logErr != nil {
+		w.logger.Warn().
+			Err(logErr).
+			Str("execution_id", executionID).
+			Msg("failed to persist action error")
+	}
 }

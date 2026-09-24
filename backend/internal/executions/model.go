@@ -15,6 +15,7 @@ type Execution struct {
 	ID           string     `json:"id"`
 	TaskID       string     `json:"task_id"`
 	TriggerID    string     `json:"trigger_id"`
+	ScheduledAt  time.Time  `json:"scheduled_at"`
 	Status       string     `json:"status"`
 	StartedAt    time.Time  `json:"started_at"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
