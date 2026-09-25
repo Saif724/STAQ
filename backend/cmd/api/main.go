@@ -96,9 +96,10 @@ func main() {
 	emailVerificationRepository := auth.NewEmailVerificationRepository(db)
 	oauthRepository := auth.NewOAuthAccountRepository(db)
 
-	emailSender := email.NewResendSender(
-		cfg.Email.APIKey,
-		cfg.Email.From,
+	emailSender := email.NewGmailSender(
+		cfg.Google.ClientID,
+		cfg.Google.ClientSecret,
+		cfg.Email.GmailRefreshToken,
 	)
 	authService := auth.NewService(
 		usersService,
@@ -166,7 +167,10 @@ func main() {
 
 	actionRegistry.Register(
 		actions.TypeEmail,
-		emailAction.NewExecutor(gmailIntegrationService),
+		emailAction.NewExecutor(
+			emailSender,
+			gmailIntegrationService,
+		),
 	)
 
 	actionRegistry.Register(

@@ -16,6 +16,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/logger"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/workers"
+	"github.com/Saif724/STAQ/backend/pkg/email"
 	"github.com/Saif724/STAQ/backend/pkg/securetoken"
 )
 
@@ -84,8 +85,13 @@ func main() {
 		connectionsService,
 		encryptor,
 	)
+	emailSender := email.NewGmailSender(
+		cfg.Google.ClientID,
+		cfg.Google.ClientSecret,
+		cfg.Email.GmailRefreshToken,
+	)
 
-	registry := workers.NewRegistry(gmailIntegrationService)
+	registry := workers.NewRegistry(emailSender, gmailIntegrationService)
 	worker := workers.New(
 		redisClient,
 		tasksRepository,

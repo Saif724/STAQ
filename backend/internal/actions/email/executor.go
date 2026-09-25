@@ -9,7 +9,20 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/actions"
 )
 
-type Sender interface {
+const (
+	SenderSTAQ      = "STAQ"
+	SenderUserGmail = "USER_GMAIL"
+)
+
+type PlatformSender interface {
+	Send(
+		to string,
+		subject string,
+		body string,
+	) error
+}
+
+type UserSender interface {
 	SendEmail(
 		ctx context.Context,
 		userID string,
@@ -21,21 +34,22 @@ type Sender interface {
 }
 
 type Executor struct {
-	sender Sender
+	platformSender PlatformSender
+	userSender     UserSender
 }
 
-func NewExecutor(senders ...Sender) *Executor {
-	var sender Sender
-
-	if len(senders) > 0 {
-		sender = senders[0]
-	}
+func NewExecutor(
+	platformSender PlatformSender,
+	userSender UserSender,
+) *Executor {
 	return &Executor{
-		sender: sender,
+		platformSender: platformSender,
+		userSender:     userSender,
 	}
 }
 
 type Configuration struct {
+	Sender       string `json:"sender"`
 	ConnectionID string `json:"connection_id"`
 	To           string `json:"to"`
 	Subject      string `json:"subject"`
@@ -53,12 +67,13 @@ func (e *Executor) Execute(
 		return nil, errors.New("invalid email configuration")
 	}
 
+	config.Sender = strings.ToUpper(strings.TrimSpace(config.Sender))
 	config.ConnectionID = strings.TrimSpace(config.ConnectionID)
 	config.To = strings.TrimSpace(config.To)
 	config.Subject = strings.TrimSpace(config.Subject)
 
-	if config.ConnectionID == "" {
-		return nil, errors.New("email connection id is required")
+	if config.Sender == "" {
+		return nil, errors.New("email sender is required")
 	}
 
 	if config.To == "" {
@@ -73,25 +88,48 @@ func (e *Executor) Execute(
 		return nil, errors.New("email body is required")
 	}
 
-	if e.sender == nil {
-		return nil, errors.New("email sender is not configured")
-	}
+	switch config.Sender {
+	case SenderSTAQ:
+		if e.platformSender == nil {
+			return nil, errors.New("STAQ email sender is not configured")
+		}
 
-	err := e.sender.SendEmail(
-		ctx,
-		executionContext.UserID,
-		config.ConnectionID,
-		config.To,
-		config.Subject,
-		config.Body,
-	)
-	if err != nil {
-		return nil, err
+		if err := e.platformSender.Send(
+			config.To,
+			config.Subject,
+			config.Body,
+		); err != nil {
+			return nil, err
+		}
+
+	case SenderUserGmail:
+		if e.userSender == nil {
+			return nil, errors.New("user Gmail sender is not configured")
+		}
+
+		if config.ConnectionID == "" {
+			return nil, errors.New("email connection id is required for USER_GMAIL")
+		}
+
+		if err := e.userSender.SendEmail(
+			ctx,
+			executionContext.UserID,
+			config.ConnectionID,
+			config.To,
+			config.Subject,
+			config.Body,
+		); err != nil {
+			return nil, err
+		}
+
+	default:
+		return nil, errors.New("unsupported email sender")
 	}
 
 	return &actions.ExecutionResult{
 		Message: "email sent successfully",
 		Data: map[string]any{
+			"sender":  config.Sender,
 			"to":      config.To,
 			"subject": config.Subject,
 		},

@@ -48,8 +48,8 @@ func Load() (*Config, error) {
 		},
 
 		Email: EmailConfig{
-			APIKey: getEnv("RESEND_API_KEY", ""),
-			From:   getEnv("EMAIL_FROM", ""),
+			GmailRefreshToken: getEnv("STAQ_GMAIL_REFRESH_TOKEN", ""),
+			GmailFrom:         getEnv("STAQ_GMAIL_FROM", ""),
 		},
 
 		Google: GoogleConfig{

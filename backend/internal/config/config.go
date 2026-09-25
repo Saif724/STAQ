@@ -32,8 +32,8 @@ type JWTConfig struct {
 }
 
 type EmailConfig struct {
-	APIKey string
-	From   string
+	GmailRefreshToken string
+	GmailFrom         string
 }
 
 type GoogleConfig struct {

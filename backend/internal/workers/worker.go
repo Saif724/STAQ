@@ -57,7 +57,8 @@ func New(
 }
 
 func NewRegistry(
-	emailSender emailAction.Sender,
+	platformEmailSender emailAction.PlatformSender,
+	gmailIntegrationService emailAction.UserSender,
 ) *actions.Registry {
 	registry := actions.NewRegistry()
 
@@ -68,7 +69,7 @@ func NewRegistry(
 
 	registry.Register(
 		actions.TypeEmail,
-		emailAction.NewExecutor(emailSender),
+		emailAction.NewExecutor(platformEmailSender, gmailIntegrationService),
 	)
 
 	registry.Register(
