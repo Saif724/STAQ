@@ -1,0 +1,99 @@
+services:
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: staq
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2023
+    
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d staq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+    command:
+      - sh
+      - -c
+      - >
+        curl -fsSL
+        https://github.com/golang-migrate/migrate/releases/download/v4.19.0/migrate.linux-amd64.tar.gz
+        -o /tmp/migrate.tar.gz &&
+        tar -xzf /tmp/migrate.tar.gz -C /tmp &&
+        /tmp/migrate
+        -path /app/migrations
+        -database "$$DATABASE_URL"
+        up
+    environment:
+      DATABASE_URL: postgresql://postgres:2023@postgres:5432/postgres?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+    command: ["/app/api"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:2023@postgres:5432/postgres?sslmode=disable
+      REDIS_ADDRESS: redis:6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  scheduler:
+    build:
+      context: .
+    command: ["/app/scheduler"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:2023@postgres:5432/postgres?sslmode=disable
+      REDIS_ADDRESS: redis:6379
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+    command: ["/app/worker"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:2023@postgres:5432/postgres?sslmode=disable
+      REDIS_ADDRESS: redis:6379
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
