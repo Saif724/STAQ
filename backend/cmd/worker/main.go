@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -108,6 +109,20 @@ func main() {
 		syscall.SIGTERM,
 	)
 	defer stop()
+
+	go func() {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "8080"
+		}
+		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("ok"))
+		})
+		if err := http.ListenAndServe(":"+port, nil); err != nil {
+			logg.Error().Err(err).Msg("health server failed")
+		}
+	}()
 
 	if err := worker.Run(ctx); err != nil {
 		if err != context.Canceled &&
