@@ -25,6 +25,7 @@ type RedisConfig struct {
 	Address  string
 	Password string
 	DB       int
+	TLS      bool
 }
 
 type JWTConfig struct {

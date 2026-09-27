@@ -24,6 +24,10 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	redisTLS, err := strconv.ParseBool(getEnv("REDIS_TLS", "false"))
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
 		App: AppConfig{
@@ -41,6 +45,7 @@ func Load() (*Config, error) {
 			Address:  getEnv("REDIS_ADDRESS", "localhost:6379"),
 			Password: getEnv("REDIS_PASSWORD", ""),
 			DB:       redisDB,
+			TLS:      redisTLS,
 		},
 
 		JWT: JWTConfig{

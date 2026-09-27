@@ -50,6 +50,7 @@ func main() {
 		cfg.Redis.Address,
 		cfg.Redis.Password,
 		cfg.Redis.DB,
+		cfg.Redis.TLS,
 	)
 	if err != nil {
 		logg.Fatal().

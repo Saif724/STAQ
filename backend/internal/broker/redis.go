@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -13,19 +14,27 @@ type Redis struct {
 	client *redis.Client
 }
 
-func NewRedisClient(address, password string, db int) (*Redis, error) {
+func NewRedisClient(address, password string, db int, useTLS bool) (*Redis, error) {
 	if address == "" {
 		return nil, fmt.Errorf("redis address is required")
 	}
 
-	client := redis.NewClient(&redis.Options{
+	options := &redis.Options{
 		Addr:         address,
 		Password:     password,
 		DB:           db,
 		DialTimeout:  5 * time.Second,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 5 * time.Second,
-	})
+	}
+
+	if useTLS {
+		options.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	client := redis.NewClient(options)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
