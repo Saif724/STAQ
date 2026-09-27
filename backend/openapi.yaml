@@ -1,0 +1,2599 @@
+openapi: 3.0.3
+
+info:
+  title: STAQ API
+  description: |
+    REST API for STAQ (Smart Task Automation Queue).
+
+    STAQ allows users to create tasks, configure triggers and actions,
+    schedule executions, connect Gmail accounts, and monitor execution logs.
+  version: 1.0.0
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  # Replace with the deployed backend URL when available.
+  # - url: https://api.example.com
+  #   description: Production server
+
+tags:
+  - name: Health
+    description: Service health
+  - name: Authentication
+    description: User registration, login, verification, and token management
+  - name: Users
+    description: Authenticated user information
+  - name: Gmail
+    description: Gmail account connection
+  - name: Tasks
+    description: Task management
+  - name: Queues
+    description: Queue management
+  - name: Triggers
+    description: Task trigger management
+  - name: Actions
+    description: Task action management
+  - name: Executions
+    description: Execution and execution log information
+
+paths:
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Check service health
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: All required services are healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+                database: ok
+                redis: ok
+
+        '400':
+          description: Invalid health check request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '503':
+          description: One or more required services are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: error
+                database: ok
+                redis: error
+
+
+  # ============================================================
+  # AUTHENTICATION
+  # ============================================================
+
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user
+      operationId: register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              full_name: Saif Ahmed
+              email: saif@example.com
+              password: StrongPassword123!
+
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponseWrapper'
+
+        '400':
+          description: Invalid registration request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '409':
+          description: User already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: saif@example.com
+              password: StrongPassword123!
+
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponseWrapper'
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '403':
+          description: Account is inactive or email is not verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      operationId: refreshAccessToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refresh_token: eyJhbGciOi...
+
+      responses:
+        '200':
+          description: Access token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponseWrapper'
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout
+      operationId: logout
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+            example:
+              refresh_token: eyJhbGciOi...
+
+      responses:
+        '200':
+          description: Logged out successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: logged out successfully
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /auth/verify-email:
+    post:
+      tags:
+        - Authentication
+      summary: Verify email address
+      operationId: verifyEmail
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyEmailRequest'
+            example:
+              email: saif@example.com
+              code: "483921"
+
+      responses:
+        '200':
+          description: Email verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: email verified successfully
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Invalid or expired verification code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '409':
+          description: Email is already verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /auth/resend-verification:
+    post:
+      tags:
+        - Authentication
+      summary: Resend email verification code
+      operationId: resendVerification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
+            example:
+              email: saif@example.com
+
+      responses:
+        '200':
+          description: Verification email sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+              example:
+                message: verification email sent successfully
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '409':
+          description: Email is already verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /auth/google:
+    get:
+      tags:
+        - Authentication
+      summary: Start Google authentication
+      description: Redirects the user to Google's OAuth authorization page.
+      operationId: googleLogin
+      security: []
+      responses:
+        '200':
+          description: Google authentication completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponseWrapper'
+
+        '307':
+          description: Redirect to Google OAuth
+
+        '400':
+          description: Invalid Google authentication request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Failed to start Google authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /auth/google/callback:
+    get:
+      tags:
+        - Authentication
+      summary: Google authentication callback
+      operationId: googleCallback
+      security: []
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Google authentication completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponseWrapper'
+
+        '400':
+          description: Google authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  # ============================================================
+  # USERS
+  # ============================================================
+
+  /users/me:
+    get:
+      tags:
+        - Users
+      summary: Get current user
+      operationId: getCurrentUser
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  # ============================================================
+  # GMAIL CONNECTION
+  # ============================================================
+
+  /connections/google:
+    get:
+      tags:
+        - Gmail
+      summary: Connect Gmail account
+      description: |
+        Starts the Google OAuth flow for connecting the authenticated
+        user's Gmail account to STAQ.
+      operationId: connectGoogle
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Gmail authorization completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GmailConnectionResponseWrapper'
+
+        '307':
+          description: Redirect to Google OAuth
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Failed to start Gmail authorization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /connections/google/callback:
+    get:
+      tags:
+        - Gmail
+      summary: Complete Gmail connection
+      operationId: googleConnectionCallback
+      security: []
+      parameters:
+        - name: state
+          in: query
+          required: true
+          schema:
+            type: string
+
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+
+      responses:
+        '200':
+          description: Gmail account connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GmailConnectionResponseWrapper'
+
+        '400':
+          description: Gmail authorization failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  # ============================================================
+  # TASKS
+  # ============================================================
+
+  /tasks:
+    post:
+      tags:
+        - Tasks
+      summary: Create a task
+      operationId: createTask
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+            example:
+              queue_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+              name: Daily report
+              description: Generate and send daily report
+              timeout_seconds: 30
+              max_retries: 2
+
+      responses:
+        '200':
+          description: Task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponseWrapper'
+
+        '400':
+          description: Invalid task request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Queue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    get:
+      tags:
+        - Tasks
+      summary: List tasks
+      operationId: listTasks
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Tasks retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskListResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /tasks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Tasks
+      summary: Get task
+      operationId: getTask
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Task retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    put:
+      tags:
+        - Tasks
+      summary: Update task
+      operationId: updateTask
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTaskRequest'
+
+      responses:
+        '200':
+          description: Task updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskResponseWrapper'
+
+        '400':
+          description: Invalid task request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    delete:
+      tags:
+        - Tasks
+      summary: Archive task
+      operationId: deleteTask
+      security:
+        - bearerAuth: []
+
+      responses:
+        '204':
+          description: Task archived successfully
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  # ============================================================
+  # QUEUES
+  # ============================================================
+
+  /queues:
+    post:
+      tags:
+        - Queues
+      summary: Create queue
+      operationId: createQueue
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateQueueRequest'
+
+      responses:
+        '201':
+          description: Queue created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueResponseWrapper'
+
+        '400':
+          description: Invalid queue request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    get:
+      tags:
+        - Queues
+      summary: List queues
+      operationId: listQueues
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Queues retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueListResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /queues/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Queues
+      summary: Get queue
+      operationId: getQueue
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Queue retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Queue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    put:
+      tags:
+        - Queues
+      summary: Update queue
+      operationId: updateQueue
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateQueueRequest'
+
+      responses:
+        '200':
+          description: Queue updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueResponseWrapper'
+
+        '400':
+          description: Invalid queue request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Queue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    delete:
+      tags:
+        - Queues
+      summary: Delete queue
+      operationId: deleteQueue
+      security:
+        - bearerAuth: []
+
+      responses:
+        '204':
+          description: Queue deleted successfully
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Queue not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '409':
+          description: Queue cannot be deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  # ============================================================
+  # TRIGGERS
+  # ============================================================
+
+  /triggers:
+    post:
+      tags:
+        - Triggers
+      summary: Create trigger
+      operationId: createTrigger
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTriggerRequest'
+            examples:
+              once:
+                summary: One-time trigger
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  trigger_type: ONCE
+                  timezone: Asia/Dhaka
+                  start_at: "2026-10-01T10:00:00+06:00"
+
+              daily:
+                summary: Daily trigger
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  trigger_type: DAILY
+                  timezone: Asia/Dhaka
+                  start_at: "2026-10-01T10:00:00+06:00"
+
+              cron:
+                summary: Cron trigger
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  trigger_type: CRON
+                  cron_expression: "0 10 * * *"
+                  timezone: Asia/Dhaka
+                  start_at: "2026-10-01T10:00:00+06:00"
+
+      responses:
+        '200':
+          description: Trigger created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerResponseWrapper'
+
+        '400':
+          description: Invalid trigger configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /tasks/{taskID}/triggers:
+    parameters:
+      - name: taskID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Triggers
+      summary: List triggers for a task
+      operationId: listTaskTriggers
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Triggers retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerListResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /triggers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Triggers
+      summary: Get trigger
+      operationId: getTrigger
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Trigger retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Trigger not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    put:
+      tags:
+        - Triggers
+      summary: Update trigger
+      operationId: updateTrigger
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTriggerRequest'
+
+      responses:
+        '200':
+          description: Trigger updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerResponseWrapper'
+
+        '400':
+          description: Invalid trigger configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Trigger not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    delete:
+      tags:
+        - Triggers
+      summary: Delete trigger
+      operationId: deleteTrigger
+      security:
+        - bearerAuth: []
+
+      responses:
+        '204':
+          description: Trigger deleted successfully
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Trigger not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  # ============================================================
+  # ACTIONS
+  # ============================================================
+
+  /actions:
+    post:
+      tags:
+        - Actions
+      summary: Create action
+      operationId: createAction
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateActionRequest'
+
+            examples:
+              reminder:
+                summary: Reminder action
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  action_type: REMINDER
+                  execution_order: 1
+                  configuration:
+                    message: Daily report is due
+                  continue_on_failure: false
+
+              staq_email:
+                summary: STAQ Gmail sender
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  action_type: EMAIL
+                  execution_order: 1
+                  configuration:
+                    sender: STAQ
+                    to: recipient@example.com
+                    subject: Daily report
+                    body: Your daily report is ready.
+                  continue_on_failure: false
+
+              user_gmail:
+                summary: Connected user Gmail sender
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  action_type: EMAIL
+                  execution_order: 1
+                  configuration:
+                    sender: USER_GMAIL
+                    connection_id: 4bb2c3e1-6f40-4b0e-9d7e-7a1c8d1f2b31
+                    to: recipient@example.com
+                    subject: Daily report
+                    body: Your daily report is ready.
+                  continue_on_failure: false
+
+              http:
+                summary: HTTP action
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  action_type: HTTP
+                  execution_order: 1
+                  configuration:
+                    method: POST
+                    url: https://example.com/webhook
+                    headers:
+                      Content-Type: application/json
+                    body: '{"event":"task.completed"}'
+                  continue_on_failure: false
+
+              shell:
+                summary: Shell action
+                value:
+                  task_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
+                  action_type: SHELL
+                  execution_order: 1
+                  configuration:
+                    command: echo
+                    args:
+                      - hello
+                  continue_on_failure: false
+
+      responses:
+        '200':
+          description: Action created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponseWrapper'
+
+        '400':
+          description: Invalid action configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /tasks/{taskID}/actions:
+    parameters:
+      - name: taskID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Actions
+      summary: List actions for a task
+      operationId: listTaskActions
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Actions retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionListResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /actions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Actions
+      summary: Get action
+      operationId: getAction
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Action retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Action not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    put:
+      tags:
+        - Actions
+      summary: Update action
+      operationId: updateAction
+      security:
+        - bearerAuth: []
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateActionRequest'
+
+      responses:
+        '200':
+          description: Action updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponseWrapper'
+
+        '400':
+          description: Invalid action configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Action not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+    delete:
+      tags:
+        - Actions
+      summary: Delete action
+      operationId: deleteAction
+      security:
+        - bearerAuth: []
+
+      responses:
+        '204':
+          description: Action deleted successfully
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Action not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  # ============================================================
+  # EXECUTIONS
+  # ============================================================
+
+  /executions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Executions
+      summary: Get execution
+      operationId: getExecution
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Execution retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Execution not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /executions/{id}/logs:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      tags:
+        - Executions
+      summary: Get execution logs
+      operationId: getExecutionLogs
+      security:
+        - bearerAuth: []
+
+      responses:
+        '200':
+          description: Execution logs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionLogListResponseWrapper'
+
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: Execution not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+# ==============================================================
+# COMPONENTS
+# ==============================================================
+
+components:
+
+  securitySchemes:
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+
+  schemas:
+
+    # ----------------------------------------------------------
+    # COMMON
+    # ----------------------------------------------------------
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: INVALID_REQUEST
+            message:
+              type: string
+              example: Invalid request
+
+
+    MessageResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          example: logged out successfully
+
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - database
+        - redis
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - error
+        database:
+          type: string
+          enum:
+            - ok
+            - error
+        redis:
+          type: string
+          enum:
+            - ok
+            - error
+
+
+    # ----------------------------------------------------------
+    # AUTHENTICATION
+    # ----------------------------------------------------------
+
+    RegisterRequest:
+      type: object
+      required:
+        - full_name
+        - email
+        - password
+      properties:
+        full_name:
+          type: string
+          example: Saif Ahmed
+        email:
+          type: string
+          format: email
+          example: saif@example.com
+        password:
+          type: string
+          format: password
+          example: StrongPassword123!
+
+
+    RegisterResponse:
+      type: object
+      required:
+        - id
+        - full_name
+        - email
+        - email_verified
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        email_verified:
+          type: boolean
+
+
+    RegisterResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/RegisterResponse'
+
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+
+    LoginResponse:
+      type: object
+      required:
+        - access_token
+        - refresh_token
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+
+
+    LoginResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/LoginResponse'
+
+
+    RefreshRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+
+
+    RefreshResponse:
+      type: object
+      required:
+        - access_token
+      properties:
+        access_token:
+          type: string
+
+
+    RefreshResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/RefreshResponse'
+
+
+    LogoutRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+
+
+    VerifyEmailRequest:
+      type: object
+      required:
+        - email
+        - code
+      properties:
+        email:
+          type: string
+          format: email
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
+          example: "483921"
+
+
+    ResendVerificationRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+
+
+    # ----------------------------------------------------------
+    # USER
+    # ----------------------------------------------------------
+
+    User:
+      type: object
+      required:
+        - id
+        - full_name
+        - email
+        - email_verified
+        - is_active
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        full_name:
+          type: string
+        email:
+          type: string
+          format: email
+        email_verified:
+          type: boolean
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+
+    UserResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+
+
+    # ----------------------------------------------------------
+    # GMAIL CONNECTION
+    # ----------------------------------------------------------
+
+    GmailConnection:
+      type: object
+      required:
+        - id
+        - user_id
+        - provider
+        - provider_account_id
+        - account_email
+        - scopes
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          example: GOOGLE
+        provider_account_id:
+          type: string
+        account_email:
+          type: string
+          format: email
+        scopes:
+          type: array
+          items:
+            type: string
+          example:
+            - openid
+            - profile
+            - email
+            - https://www.googleapis.com/auth/gmail.send
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+
+    GmailConnectionResponse:
+      type: object
+      required:
+        - user_id
+        - connection
+        - provider
+        - account_email
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        connection:
+          $ref: '#/components/schemas/GmailConnection'
+        provider:
+          type: string
+          example: GOOGLE
+        account_email:
+          type: string
+          format: email
+
+
+    GmailConnectionResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/GmailConnectionResponse'
+
+
+    # ----------------------------------------------------------
+    # TASKS
+    # ----------------------------------------------------------
+
+    CreateTaskRequest:
+      type: object
+      required:
+        - queue_id
+        - name
+        - timeout_seconds
+        - max_retries
+      properties:
+        queue_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        timeout_seconds:
+          type: integer
+          minimum: 1
+        max_retries:
+          type: integer
+          minimum: 0
+
+
+    UpdateTaskRequest:
+      type: object
+      required:
+        - queue_id
+        - name
+        - status
+        - timeout_seconds
+        - max_retries
+      properties:
+        queue_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - Active
+            - Paused
+            - Archived
+        timeout_seconds:
+          type: integer
+          minimum: 1
+        max_retries:
+          type: integer
+          minimum: 0
+
+
+    Task:
+      type: object
+      required:
+        - id
+        - user_id
+        - queue_id
+        - name
+        - status
+        - timeout_seconds
+        - max_retries
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        queue_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum:
+            - Active
+            - Paused
+            - Archived
+        timeout_seconds:
+          type: integer
+        max_retries:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+
+    TaskResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Task'
+
+
+    TaskListResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Task'
+
+
+    # ----------------------------------------------------------
+    # QUEUES
+    # ----------------------------------------------------------
+
+    CreateQueueRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+
+    UpdateQueueRequest:
+      type: object
+      required:
+        - name
+        - is_active
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+
+
+    Queue:
+      type: object
+      required:
+        - id
+        - name
+        - is_active
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+
+    QueueResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Queue'
+
+
+    QueueListResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Queue'
+
+
+    # ----------------------------------------------------------
+    # TRIGGERS
+    # ----------------------------------------------------------
+
+    CreateTriggerRequest:
+      type: object
+      required:
+        - task_id
+        - trigger_type
+        - timezone
+        - start_at
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        trigger_type:
+          type: string
+          enum:
+            - ONCE
+            - DAILY
+            - WEEKLY
+            - MONTHLY
+            - YEARLY
+            - CRON
+        cron_expression:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+          example: Asia/Dhaka
+        start_at:
+          type: string
+          format: date-time
+
+
+    UpdateTriggerRequest:
+      type: object
+      required:
+        - trigger_type
+        - timezone
+        - start_at
+        - is_active
+      properties:
+        trigger_type:
+          type: string
+          enum:
+            - ONCE
+            - DAILY
+            - WEEKLY
+            - MONTHLY
+            - YEARLY
+            - CRON
+        cron_expression:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+        start_at:
+          type: string
+          format: date-time
+        is_active:
+          type: boolean
+
+
+    Trigger:
+      type: object
+      required:
+        - id
+        - task_id
+        - trigger_type
+        - timezone
+        - next_run_at
+        - is_active
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        trigger_type:
+          type: string
+          enum:
+            - ONCE
+            - DAILY
+            - WEEKLY
+            - MONTHLY
+            - YEARLY
+            - CRON
+        cron_expression:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+        next_run_at:
+          type: string
+          format: date-time
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+
+    TriggerResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Trigger'
+
+
+    TriggerListResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Trigger'
+
+
+    # ----------------------------------------------------------
+    # ACTIONS
+    # ----------------------------------------------------------
+
+    CreateActionRequest:
+      type: object
+      required:
+        - task_id
+        - action_type
+        - execution_order
+        - configuration
+        - continue_on_failure
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        action_type:
+          type: string
+          enum:
+            - REMINDER
+            - EMAIL
+            - HTTP
+            - SHELL
+        execution_order:
+          type: integer
+          minimum: 1
+        configuration:
+          type: object
+          additionalProperties: true
+        continue_on_failure:
+          type: boolean
+
+
+    UpdateActionRequest:
+      type: object
+      required:
+        - action_type
+        - execution_order
+        - configuration
+        - continue_on_failure
+      properties:
+        action_type:
+          type: string
+          enum:
+            - REMINDER
+            - EMAIL
+            - HTTP
+            - SHELL
+        execution_order:
+          type: integer
+          minimum: 1
+        configuration:
+          type: object
+          additionalProperties: true
+        continue_on_failure:
+          type: boolean
+
+
+    Action:
+      type: object
+      required:
+        - id
+        - task_id
+        - action_type
+        - execution_order
+        - configuration
+        - continue_on_failure
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        action_type:
+          type: string
+          enum:
+            - REMINDER
+            - EMAIL
+            - HTTP
+            - SHELL
+        execution_order:
+          type: integer
+        configuration:
+          type: object
+          additionalProperties: true
+        continue_on_failure:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+
+    ActionResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Action'
+
+
+    ActionListResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+
+
+    # ----------------------------------------------------------
+    # EXECUTIONS
+    # ----------------------------------------------------------
+
+    Execution:
+      type: object
+      required:
+        - id
+        - task_id
+        - trigger_id
+        - scheduled_at
+        - status
+        - started_at
+        - retry_count
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        trigger_id:
+          type: string
+          format: uuid
+        scheduled_at:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - PENDING
+            - RUNNING
+            - SUCCESS
+            - FAILED
+            - CANCELLED
+            - TIMED_OUT
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        duration_ms:
+          type: integer
+          format: int64
+          nullable: true
+        retry_count:
+          type: integer
+        error_message:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+
+    ExecutionResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/Execution'
+
+
+    ExecutionLog:
+      type: object
+      required:
+        - id
+        - execution_id
+        - log_level
+        - message
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        execution_id:
+          type: string
+          format: uuid
+        log_level:
+          type: string
+          enum:
+            - INFO
+            - WARNING
+            - ERROR
+        message:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+
+    ExecutionLogListResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExecutionLog'
