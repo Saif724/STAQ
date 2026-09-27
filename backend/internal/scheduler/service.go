@@ -127,7 +127,7 @@ func (s *Service) processOne(
 			return false, fmt.Errorf("failed to publish task job: %w", err)
 		}
 
-		trigger.LastRunAt = &now
+		trigger.LastRunAt = &scheduledTime
 		trigger.IsActive = false
 		trigger.UpdatedAt = now
 
@@ -157,7 +157,7 @@ func (s *Service) processOne(
 
 	stale := now.Sub(scheduledTime) > maxCatchUpWindow
 
-	trigger.LastRunAt = &now
+	trigger.LastRunAt = &scheduledTime
 	trigger.NextRunAt = nextRunAt
 	trigger.UpdatedAt = now
 

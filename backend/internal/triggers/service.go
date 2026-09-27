@@ -116,6 +116,7 @@ func (s *Service) Create(
 		TriggerType:    triggerType,
 		CronExpression: cronExpression,
 		TimeZone:       timezone,
+		StartAt:        startAt,
 		NextRunAt:      nextRunAt.UTC(),
 		LastRunAt:      nil,
 		IsActive:       true,
@@ -248,6 +249,7 @@ func (s *Service) Update(
 		TriggerType:    triggerType,
 		CronExpression: cronExpression,
 		TimeZone:       timezone,
+		StartAt:        startAt,
 		NextRunAt:      nextRunAt.UTC(),
 		LastRunAt:      existing.LastRunAt,
 		IsActive:       input.IsActive,
@@ -301,22 +303,23 @@ func (s *Service) CalculateNextRun(
 	}
 
 	scheduledAt := from.In(location)
+	startAt := trigger.StartAt.In(location)
 
 	switch trigger.TriggerType {
 	case TypeOnce:
 		return time.Time{}, nil
 
 	case TypeDaily:
-		return scheduledAt.AddDate(0, 0, 1).UTC(), nil
+		return nextDailyFromAnchor(startAt, scheduledAt).UTC(), nil
 
 	case TypeWeekly:
-		return scheduledAt.AddDate(0, 0, 7).UTC(), nil
+		return nextWeeklyFromAnchor(startAt, scheduledAt).UTC(), nil
 
 	case TypeMonthly:
-		return addOneMonthPreservingDay(scheduledAt).UTC(), nil
+		return nextMonthlyFromAnchor(startAt, scheduledAt).UTC(), nil
 
 	case TypeYearly:
-		return addOneYearPreservingDate(scheduledAt).UTC(), nil
+		return nextYearlyFromAnchor(startAt, scheduledAt).UTC(), nil
 	case TypeCron:
 		if trigger.CronExpression == nil ||
 			strings.TrimSpace(*trigger.CronExpression) == "" {
@@ -440,76 +443,131 @@ func calculateFirstRun(
 	return time.Time{}, ErrInvalidTriggerType
 }
 
-func nextDaily(startAt, now time.Time) time.Time {
-	next := startAt
-
-	for !next.After(now) {
-		next = next.AddDate(0, 0, 1)
+func nextDailyFromAnchor(anchor, after time.Time) time.Time {
+	if after.Before(anchor) {
+		return anchor
 	}
 
-	return next
+	days := int(after.Sub(anchor) / (24 * time.Hour))
+	candidate := anchor.AddDate(0, 0, days)
+
+	if !candidate.After(after) {
+		candidate = candidate.AddDate(0, 0, 1)
+	}
+
+	return candidate
+}
+
+func nextWeeklyFromAnchor(anchor, after time.Time) time.Time {
+	if after.Before(anchor) {
+		return anchor
+	}
+
+	weeks := int(after.Sub(anchor) / (7 * 24 * time.Hour))
+	candidate := anchor.AddDate(0, 0, weeks*7)
+
+	if !candidate.After(after) {
+		candidate = candidate.AddDate(0, 0, 7)
+	}
+
+	return candidate
+}
+
+func nextMonthlyFromAnchor(anchor, after time.Time) time.Time {
+	if after.Before(anchor) {
+		return anchor
+	}
+
+	months := (after.Year()-anchor.Year())*12 + int(after.Month()-anchor.Month())
+
+	for {
+		candidate := addMonthsPreservingAnchor(anchor, months)
+
+		if candidate.After(after) {
+			return candidate
+		}
+
+		months++
+	}
+}
+
+func addMonthsPreservingAnchor(anchor time.Time, months int) time.Time {
+	totalMonths := int(anchor.Month()) - 1 + months
+
+	year := anchor.Year() + totalMonths/12
+	month := time.Month(totalMonths%12 + 1)
+
+	day := anchor.Day()
+	lastDay := daysInMonth(year, month)
+
+	if day > lastDay {
+		day = lastDay
+	}
+
+	return time.Date(
+		year,
+		month,
+		day,
+		anchor.Hour(),
+		anchor.Minute(),
+		anchor.Second(),
+		anchor.Nanosecond(),
+		anchor.Location(),
+	)
+}
+
+func nextYearlyFromAnchor(anchor, after time.Time) time.Time {
+	if after.Before(anchor) {
+		return anchor
+	}
+
+	years := after.Year() - anchor.Year()
+	for {
+		candidate := addYearsPreservingAnchor(anchor, years)
+
+		if candidate.After(after) {
+			return candidate
+		}
+
+		years++
+	}
+}
+
+func addYearsPreservingAnchor(anchor time.Time, years int) time.Time {
+	year := anchor.Year() + years
+
+	day := anchor.Day()
+	lastDay := daysInMonth(year, anchor.Month())
+
+	if day > lastDay {
+		day = lastDay
+	}
+
+	return time.Date(
+		year,
+		anchor.Month(),
+		day,
+		anchor.Hour(),
+		anchor.Minute(),
+		anchor.Second(),
+		anchor.Nanosecond(),
+		anchor.Location(),
+	)
+}
+func nextDaily(startAt, now time.Time) time.Time {
+	return nextDailyFromAnchor(startAt, now)
 }
 
 func nextWeekly(startAt, now time.Time) time.Time {
-	next := startAt
-
-	for !next.After(now) {
-		next = next.AddDate(0, 0, 7)
-	}
-
-	return next
+	return nextWeeklyFromAnchor(startAt, now)
 }
 
 func nextMonthly(startAt, now time.Time) time.Time {
-	next := startAt
-
-	for !next.After(now) {
-		next = addOneMonthPreservingDay(next)
-	}
-
-	return next
+	return nextMonthlyFromAnchor(startAt, now)
 }
 
 func nextYearly(startAt, now time.Time) time.Time {
-	next := startAt
-
-	for !next.After(now) {
-		next = addOneYearPreservingDate(next)
-	}
-
-	return next
-}
-
-func addOneMonthPreservingDay(t time.Time) time.Time {
-	year := t.Year()
-	month := t.Month() + 1
-
-	if month > time.December {
-		month = time.January
-		year++
-	}
-
-	day := t.Day()
-	lastDay := daysInMonth(year, month)
-
-	if day > lastDay {
-		day = lastDay
-	}
-
-	return time.Date(year, month, day, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
-}
-func addOneYearPreservingDate(t time.Time) time.Time {
-	year := t.Year() + 1
-	month := t.Month()
-	day := t.Day()
-
-	lastDay := daysInMonth(year, month)
-
-	if day > lastDay {
-		day = lastDay
-	}
-
-	return time.Date(year, month, day, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), t.Location())
+	return nextYearlyFromAnchor(startAt, now)
 }
 
 func daysInMonth(year int, month time.Month) int {

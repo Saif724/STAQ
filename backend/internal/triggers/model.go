@@ -17,6 +17,7 @@ type Trigger struct {
 	TriggerType    string     `json:"trigger_type"`
 	CronExpression *string    `json:"cron_expression,omitempty"`
 	TimeZone       string     `json:"timezone"`
+	StartAt        time.Time  `json:"start_at"`
 	NextRunAt      time.Time  `json:"next_run_at"`
 	LastRunAt      *time.Time `json:"last_run_at,omitempty"`
 	IsActive       bool       `json:"is_active"`
