@@ -1,450 +1,55 @@
-# Software Requirements Specification (SRS)
+# Software Requirements and Current Scope
 
-# STAQ
+This document records backend behavior currently represented in the repository. It is an implementation snapshot, not a promise that every product idea or feature request is already available.
 
-### Scheduled Tasks & Queues
+## Purpose
 
-### Intelligent Task Scheduling & Workflow Automation Platform
+STAQ provides authenticated users with a backend for defining scheduled tasks, attaching ordered actions, dispatching due work through Redis, and inspecting individual executions and their logs.
 
-Version: 1.0
+## Implemented functional scope
 
-Prepared By:
-Ahsan Ahmed Saif
+### Accounts and authentication
 
----
+- Register with full name, email, and password; email verification is required for password-based login.
+- Login issues an access token and refresh token. Refresh and logout operate on the refresh token.
+- Google OAuth sign-in is available, and authenticated users can authorize a Google account for Gmail sending.
+- Password-based user endpoints use bearer JWT access tokens.
 
-# 1. Introduction
+### Queues and tasks
 
-## 1.1 Purpose
+- Queue records can be created, listed, fetched, updated, and deleted.
+- A task belongs to a user and a queue. It has a name, optional description, status, timeout, and maximum retry count.
+- Task endpoints support create, list-all-for-current-user, fetch, update, and archive through `DELETE`.
+- Valid task statuses are `Active`, `Paused`, and `Archived`.
 
-STAQ is a web-based task scheduling and workflow automation platform that allows users to automate repetitive tasks.
+### Triggers
 
-Instead of manually remembering every task or running repetitive jobs, users can schedule actions to execute automatically at specific times or intervals.
+- Triggers support `ONCE`, `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`, and standard five-field `CRON` schedules.
+- Scheduling uses an IANA time-zone name and a required `start_at` timestamp.
+- Triggers can be created, listed for a task, fetched, updated, and deleted.
 
-STAQ aims to become a reliable automation platform for personal productivity, developers, and small teams.
+### Actions
 
----
+- Tasks can have ordered `REMINDER`, `EMAIL`, `HTTP`, and `SHELL` actions.
+- Action configuration is stored as PostgreSQL JSONB. Actions support `continue_on_failure`.
+- The actual executor limits, including restricted shell execution and reminder behavior, are documented in [architecture.md](architecture.md).
 
-## 1.2 Scope
+### Execution
 
-Version 1 focuses on building a powerful scheduling engine capable of creating, executing, monitoring, and managing automated tasks.
+- The scheduler publishes due jobs to a Redis Stream; workers process jobs and persist execution status, timing, retry count, errors, and logs.
+- Execution states in the schema are `PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, `CANCELLED`, and `TIMED_OUT`. The worker currently creates `RUNNING` executions and completes them as `SUCCESS`, `FAILED`, or `TIMED_OUT`.
+- API clients can fetch an execution by ID and its logs. There is no execution-history list endpoint.
 
-Users can schedule reminders, send emails, execute scripts, trigger APIs, create workflows, and monitor execution history through an intuitive web interface.
+## Non-functional properties and current limits
 
-Artificial Intelligence, voice commands, and natural language processing are **not** included in Version 1.
+- PostgreSQL is persistent storage; Redis carries job messages and transient OAuth/consumer state.
+- Worker concurrency is four per worker process. Retry behavior is action-level and only applies to errors classified as retryable.
+- The API has no `/api/v1` prefix. See [api-specification.md](api-specification.md) for exact routes and response shapes.
+- Queue endpoints require bearer authentication, but queue records are global and are not scoped to an individual user.
+- No role-based authorization, task search/filter/pagination, execution list/statistics, queue metrics, in-app notifications, arbitrary script execution, or workflow-specific actions are implemented.
+- The `user_settings` table exists, but settings management is not exposed through the API.
+- The frontend is a Next.js scaffold; this backend snapshot does not establish that the product workflows described above have a complete user interface.
 
----
+## Outside current backend scope
 
-# 2. Target Users
-
-STAQ is designed for:
-
-* Students
-* Developers
-* Freelancers
-* Small Businesses
-* DevOps Engineers
-* Anyone wanting to automate repetitive work
-
----
-
-# 3. What Users Can Do
-
-STAQ allows users to automate tasks instead of remembering or manually performing them.
-
-Examples include:
-
-### Personal Productivity
-
-* Daily study reminders
-* Medicine reminders
-* Bill payment reminders
-* Birthday reminders
-* Exercise reminders
-
-### Development
-
-* Run backup scripts
-* Execute shell commands
-* Call APIs automatically
-* Monitor servers
-* Run cleanup jobs
-
-### Business
-
-* Send scheduled emails
-* Generate reports
-* Notify team members
-* Trigger webhooks
-* Automate repetitive operations
-
----
-
-# 4. Functional Requirements
-
-## 4.1 Authentication
-
-* User Registration
-* Login
-* Logout
-* JWT Authentication
-* Password Encryption
-
----
-
-## 4.2 Dashboard
-
-Users can view
-
-* Upcoming Tasks
-* Running Tasks
-* Completed Tasks
-* Failed Tasks
-* Execution Statistics
-* Queue Status
-
----
-
-## 4.3 Task Management
-
-Users can
-
-* Create Task
-* Edit Task
-* Delete Task
-* Pause Task
-* Resume Task
-* Duplicate Task
-* Archive Task
-* Search Tasks
-* Filter Tasks
-
----
-
-## 4.4 Scheduling
-
-Supported scheduling methods
-
-* One-time
-* Delayed
-* Daily
-* Weekly
-* Monthly
-* Yearly
-* Custom Cron Expressions
-
-Timezone support is included.
-
----
-
-## 4.5 Supported Actions
-
-Version 1 supports the following action types:
-
-### Reminder
-
-Display a notification to the user.
-
-Example
-
-* Study at 8 PM
-* Pay electricity bill tomorrow
-
----
-
-### Send Email
-
-Automatically send emails using SMTP.
-
-Example
-
-* Weekly report
-* Backup completed
-* Reminder emails
-
----
-
-### HTTP Request
-
-Call REST APIs automatically.
-
-Supports
-
-* GET
-* POST
-* PUT
-* DELETE
-
-Example
-
-* Call weather API
-* Trigger deployment
-* Notify another application
-
----
-
-### Webhook
-
-Trigger external services such as
-
-* Discord
-* Slack
-* Custom applications
-
----
-
-### Execute Script
-
-Execute approved shell commands or scripts.
-
-Examples
-
-* Backup database
-* Cleanup temporary files
-* Generate reports
-
----
-
-### Wait / Delay
-
-Pause workflow execution before continuing.
-
----
-
-### Trigger Another Task
-
-Automatically execute another task after completion.
-
----
-
-## 4.6 Workflow Automation
-
-Users can create workflows consisting of multiple actions.
-
-Example
-
-Backup Database
-
-↓
-
-Compress Backup
-
-↓
-
-Upload Backup
-
-↓
-
-Send Email
-
-↓
-
-Finish
-
----
-
-## 4.7 Queue Management
-
-System supports
-
-* Multiple queues
-* Worker assignment
-* Queue monitoring
-* Queue statistics
-
----
-
-## 4.8 Execution Engine
-
-Supports
-
-* Concurrent workers
-* Retry mechanism
-* Timeout handling
-* Failure recovery
-* Execution logging
-
----
-
-## 4.9 Retry Policies
-
-Users can configure
-
-* Retry count
-* Retry interval
-* Exponential backoff
-
----
-
-## 4.10 Execution History
-
-For every execution, store
-
-* Start Time
-* End Time
-* Duration
-* Status
-* Output
-* Error Message
-* Retry Count
-
----
-
-## 4.11 Search & Filtering
-
-Users can search tasks by
-
-* Name
-* Tag
-* Status
-* Queue
-* Date
-
----
-
-## 4.12 Notifications
-
-Version 1 supports
-
-* In-app notifications
-
-Future versions may include
-
-* Email notifications
-* Push notifications
-* SMS
-
----
-
-# 5. Non-Functional Requirements
-
-## Performance
-
-* Support thousands of scheduled tasks.
-* Execute tasks with minimal delay.
-* Support concurrent execution.
-
----
-
-## Reliability
-
-* Automatic retry
-* Persistent storage
-* Crash recovery
-
----
-
-## Security
-
-* JWT Authentication
-* Password hashing
-* Role-based authorization
-
----
-
-## Scalability
-
-* Multiple workers
-* Horizontal scaling
-* Distributed queues
-
----
-
-## Maintainability
-
-* Modular architecture
-* RESTful APIs
-* Clean codebase
-* Docker support
-
----
-
-# 6. Technology Stack
-
-Backend
-
-* Go
-* Gin
-* PostgreSQL
-* Redis
-
-Frontend
-
-* React
-* TypeScript
-* Tailwind CSS
-
-Documentation
-
-* Swagger / OpenAPI
-
-Deployment
-
-* Docker
-* Docker Compose
-
----
-
-# 7. Future Enhancements
-
-Version 2
-
-* Natural Language Scheduling
-* AI Task Creation
-
-Examples
-
-"Remind me every Monday to practice LeetCode."
-
-↓
-
-Automatically create the task.
-
----
-
-Version 3
-
-* Voice Commands
-* Speech-to-Text
-
-Example
-
-"Create a reminder for tomorrow."
-
-↓
-
-Automatically scheduled.
-
----
-
-Version 4
-
-* Email Reading
-* Calendar Integration
-* Browser Automation
-* GitHub Integration
-* AI Workflow Planning
-
----
-
-# 8. Out of Scope (Version 1)
-
-The following features are intentionally excluded from Version 1.
-
-* Voice Assistant
-* Artificial Intelligence
-* Natural Language Processing
-* Browser Automation
-* Gmail Reading
-* Calendar Synchronization
-* WhatsApp Automation
-* OCR
-* Computer Vision
-
----
-
-# 9. Conclusion
-
-STAQ Version 1 provides a reliable and scalable automation platform for scheduling and executing tasks.
-
-The system focuses on automation rather than artificial intelligence. Future versions will build on the same execution engine by adding natural language processing, voice interaction, and intelligent task planning.
+AI or natural-language scheduling, voice control, browser automation, calendar sync, team collaboration, SMS/push notifications, and a plugin system are not implemented in the current backend.

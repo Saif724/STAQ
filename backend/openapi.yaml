@@ -7,6 +7,13 @@ info:
 
     STAQ allows users to create tasks, configure triggers and actions,
     schedule executions, connect Gmail accounts, and monitor execution logs.
+
+    Routes are registered at the root path (there is no /api/v1 prefix).
+    Queue routes require bearer authentication. Successful JSON responses
+    use a data wrapper and errors use an error object; see the schemas below.
+    Creating a task requires an explicit active queue_id; no default queue is
+    selected. Execution collection/list and connection list/disconnect routes
+    are not currently exposed.
   version: 1.0.0
   license:
     name: MIT
@@ -58,13 +65,6 @@ paths:
                 status: ok
                 database: ok
                 redis: ok
-
-        '400':
-          description: Invalid health check request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
         '503':
           description: One or more required services are unavailable
@@ -252,9 +252,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                type: object
+                required:
+                  - data
+                properties:
+                  data:
+                    type: string
               example:
-                message: logged out successfully
+                data: logged out successfully
 
         '400':
           description: Invalid request
@@ -301,9 +306,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/MessageResponseWrapper'
               example:
-                message: email verified successfully
+                data:
+                  message: email verified successfully
 
         '400':
           description: Invalid request
@@ -356,9 +362,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MessageResponse'
+                $ref: '#/components/schemas/MessageResponseWrapper'
               example:
-                message: verification email sent successfully
+                data:
+                  message: verification email sent
 
         '400':
           description: Invalid request
@@ -367,8 +374,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-        '404':
-          description: User not found
+        '401':
+          description: Unable to resend verification email
           content:
             application/json:
               schema:
@@ -398,22 +405,8 @@ paths:
       operationId: googleLogin
       security: []
       responses:
-        '200':
-          description: Google authentication completed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponseWrapper'
-
         '307':
           description: Redirect to Google OAuth
-
-        '400':
-          description: Invalid Google authentication request
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
 
         '500':
           description: Failed to start Google authentication
@@ -443,6 +436,12 @@ paths:
           schema:
             type: string
 
+        - name: oauth_state
+          in: cookie
+          required: true
+          schema:
+            type: string
+
         - name: error
           in: query
           required: false
@@ -464,8 +463,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-        '500':
-          description: Internal server error
+        '401':
+          description: OAuth state is invalid or Google authentication failed
           content:
             application/json:
               schema:
@@ -486,13 +485,6 @@ paths:
         - bearerAuth: []
 
       responses:
-        '200':
-          description: Current user
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserResponseWrapper'
-
         '401':
           description: Authentication required
           content:
@@ -525,13 +517,6 @@ paths:
         - bearerAuth: []
 
       responses:
-        '200':
-          description: Gmail authorization completed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GmailConnectionResponseWrapper'
-
         '307':
           description: Redirect to Google OAuth
 
@@ -1750,6 +1735,15 @@ components:
           example: logged out successfully
 
 
+    MessageResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/MessageResponse'
+
+
     HealthResponse:
       type: object
       required:
@@ -1934,9 +1928,6 @@ components:
         - full_name
         - email
         - email_verified
-        - is_active
-        - created_at
-        - updated_at
       properties:
         id:
           type: string
@@ -1948,14 +1939,6 @@ components:
           format: email
         email_verified:
           type: boolean
-        is_active:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
 
 
     UserResponseWrapper:
@@ -2050,6 +2033,7 @@ components:
 
     CreateTaskRequest:
       type: object
+      description: queue_id is required; the API does not select a default queue.
       required:
         - queue_id
         - name
@@ -2313,6 +2297,7 @@ components:
         - task_id
         - trigger_type
         - timezone
+        - start_at
         - next_run_at
         - is_active
         - created_at
@@ -2338,6 +2323,9 @@ components:
           nullable: true
         timezone:
           type: string
+        start_at:
+          type: string
+          format: date-time
         next_run_at:
           type: string
           format: date-time
@@ -2461,8 +2449,9 @@ components:
         execution_order:
           type: integer
         configuration:
-          type: object
-          additionalProperties: true
+          type: string
+          format: byte
+          description: Base64-encoded JSON bytes in the current Go response model.
         continue_on_failure:
           type: boolean
         created_at:
@@ -2533,6 +2522,10 @@ components:
         started_at:
           type: string
           format: date-time
+        heartbeat_at:
+          type: string
+          format: date-time
+          nullable: true
         completed_at:
           type: string
           format: date-time
