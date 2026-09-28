@@ -125,14 +125,14 @@ func (h *Handler) CompleteGmailAuthorization(
 		http.StatusOK,
 		map[string]any{
 			"user_id":       userID,
-			"connection":    toConnectionResponst(connection),
+			"connection":    toConnectionResponsd(connection),
 			"provider":      connection.Provider,
 			"account_email": connection.AccountEmail,
 		},
 	)
 }
 
-func toConnectionResponst(
+func toConnectionResponsd(
 	connection *connections.Connection,
 ) connectionResponse {
 	return connectionResponse{

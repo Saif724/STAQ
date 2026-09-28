@@ -145,7 +145,7 @@ func (r *Repository) FindByTaskID(
 	}
 	defer rows.Close()
 
-	var triggers []Trigger
+	triggers := make([]Trigger, 0)
 
 	for rows.Next() {
 		var trigger Trigger
@@ -206,7 +206,7 @@ func (r *Repository) FindDue(
 	}
 	defer rows.Close()
 
-	var triggers []Trigger
+	triggers := make([]Trigger, 0)
 
 	for rows.Next() {
 		var trigger Trigger
@@ -247,11 +247,11 @@ func (r *Repository) Update(
 			cron_expression = $2,
 			timezone = $3,
 			start_at = $4,
-			next_run_at = $4,
-			last_run_at = $5,
-			is_active = $6,
-			updated_at = $7
-		WHERE id = $8
+			next_run_at = $5,
+			last_run_at = $6,
+			is_active = $7,
+			updated_at = $8
+		WHERE id = $9
 	`
 
 	result, err := r.db.Exec(

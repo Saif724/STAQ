@@ -3,11 +3,14 @@ package executions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+const staleExecutionTimeout = 2 * time.Minute
 
 type Service struct {
 	repository *Repository
@@ -46,6 +49,7 @@ func (s *Service) Start(
 		ScheduledAt: scheduledAt.UTC(),
 		Status:      StatusRunning,
 		StartedAt:   now,
+		HeartbeatAt: &now,
 		RetryCount:  0,
 		CreatedAt:   now,
 	}
@@ -76,12 +80,24 @@ func (s *Service) IncrementRetryCount(
 	ctx context.Context,
 	execution *Execution,
 ) error {
+	if execution == nil {
+		return errors.New("execution is required")
+	}
+
+	if strings.TrimSpace(execution.ID) == "" {
+		return errors.New("execution id is required")
+	}
+
+	if err := s.repository.IncrementRetryCount(
+		ctx,
+		execution.ID,
+	); err != nil {
+		return err
+	}
+
 	execution.RetryCount++
 
-	return s.repository.Update(
-		ctx,
-		execution,
-	)
+	return nil
 }
 
 func (s *Service) CompleteSuccess(
@@ -92,12 +108,14 @@ func (s *Service) CompleteSuccess(
 
 	execution.Status = StatusSuccess
 	execution.CompletedAt = &now
+	execution.HeartbeatAt = nil
 	execution.DurationMs = durationMs(
 		execution.StartedAt,
 		now,
 	)
 	execution.ErrorMessage = nil
-	return s.repository.Update(ctx, execution)
+
+	return s.repository.Complete(ctx, execution)
 }
 
 func (s *Service) CompleteFailure(
@@ -109,6 +127,7 @@ func (s *Service) CompleteFailure(
 
 	execution.Status = StatusFailed
 	execution.CompletedAt = &now
+	execution.HeartbeatAt = nil
 	execution.DurationMs = durationMs(
 		execution.StartedAt,
 		now,
@@ -119,7 +138,7 @@ func (s *Service) CompleteFailure(
 		execution.ErrorMessage = &message
 	}
 
-	return s.repository.Update(ctx, execution)
+	return s.repository.Complete(ctx, execution)
 
 }
 
@@ -132,6 +151,7 @@ func (s *Service) CompleteTimeout(
 
 	execution.Status = StatusTimedOut
 	execution.CompletedAt = &now
+	execution.HeartbeatAt = nil
 	execution.DurationMs = durationMs(execution.StartedAt, now)
 
 	if err != nil {
@@ -139,7 +159,7 @@ func (s *Service) CompleteTimeout(
 		execution.ErrorMessage = &message
 	}
 
-	return s.repository.Update(ctx, execution)
+	return s.repository.Complete(ctx, execution)
 }
 
 func (s *Service) Log(
@@ -222,4 +242,80 @@ func (s *Service) ListLogsByUser(
 func durationMs(start, end time.Time) *int64 {
 	duration := end.Sub(start).Milliseconds()
 	return &duration
+}
+
+func (s *Service) Heartbeat(
+	ctx context.Context,
+	executionID string,
+) error {
+	executionID = strings.TrimSpace(executionID)
+
+	if executionID == "" {
+		return errors.New("execution id is required")
+	}
+
+	now := time.Now().UTC()
+
+	return s.repository.Heartbeat(
+		ctx,
+		executionID,
+		now,
+	)
+}
+
+func (s *Service) RecoverStale(
+	ctx context.Context,
+) ([]string, error) {
+	before := time.Now().UTC().Add(-staleExecutionTimeout)
+
+	return s.repository.RecoveryStaleRunning(
+		ctx,
+		before,
+	)
+}
+
+func (s *Service) FindExisting(
+	ctx context.Context,
+	triggerID string,
+	scheduledAt time.Time,
+) (*Execution, error) {
+	return s.repository.FindByTriggerAndScheduledAt(
+		ctx,
+		triggerID,
+		scheduledAt,
+	)
+}
+
+func (s *Service) Reclaim(
+	ctx context.Context,
+	execution *Execution,
+) (bool, error) {
+	if execution == nil {
+		return false, fmt.Errorf("execution is required")
+	}
+
+	if execution.Status != StatusRunning {
+		return false, nil
+	}
+
+	if execution.HeartbeatAt == nil {
+		return false, nil
+	}
+
+	now := time.Now()
+
+	if now.Sub(*execution.HeartbeatAt) < staleExecutionTimeout {
+		return false, nil
+	}
+
+	reclaimed, err := s.repository.ReclaimExecution(
+		ctx,
+		execution.ID,
+		now,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	return reclaimed, nil
 }

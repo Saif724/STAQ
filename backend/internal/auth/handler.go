@@ -325,7 +325,7 @@ func (h *Handler) GoogleLogin(
 			w,
 			http.StatusInternalServerError,
 			"INTERNAL_ERROR",
-			"failed to initailize google authentication",
+			"failed to initiailize google authentication",
 		)
 		return
 	}

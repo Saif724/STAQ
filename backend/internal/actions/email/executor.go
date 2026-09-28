@@ -77,7 +77,7 @@ func (e *Executor) Execute(
 	}
 
 	if config.To == "" {
-		return nil, errors.New("email receipient is required")
+		return nil, errors.New("email recipient is required")
 	}
 
 	if config.Subject == "" {

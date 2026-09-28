@@ -146,7 +146,7 @@ func (r *Repository) Update(
 			name = $1,
 			description = $2,
 			is_active = $3
-		WHERE id = &4
+		WHERE id = $4
 	`
 
 	result, err := r.db.Exec(

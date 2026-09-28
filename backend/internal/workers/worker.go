@@ -27,6 +27,7 @@ const (
 	initialRetryDelay  = 1 * time.Second
 	maxRetryDelay      = 30 * time.Second
 	defaultConcurrency = 4
+	heartbeatInterval  = 10 * time.Second
 )
 
 type Worker struct {
@@ -101,6 +102,17 @@ func (w *Worker) Run(ctx context.Context) error {
 		Int("concurrency", defaultConcurrency).
 		Msg("worker pool started")
 
+	if err := w.broker.EnsureTaskConsumerGroup(ctx); err != nil {
+		return fmt.Errorf("failed to initialize task consumer group: %w", err)
+	}
+
+	recoveryConsumer := fmt.Sprintf("recovery-%d", time.Now().UnixNano())
+
+	go w.runPendingJobRecovery(
+		ctx,
+		recoveryConsumer,
+	)
+
 	var wg sync.WaitGroup
 
 	for i := 0; i < defaultConcurrency; i++ {
@@ -109,12 +121,18 @@ func (w *Worker) Run(ctx context.Context) error {
 		go func(workerID int) {
 			defer wg.Done()
 
+			consumer := fmt.Sprintf(
+				"worker-%d",
+				workerID,
+			)
+
 			w.logger.Info().
 				Int("worker_id", workerID).
+				Str("consumer", consumer).
 				Msg("worker started")
 
 			for {
-				if err := w.processOne(ctx); err != nil {
+				if err := w.processOne(ctx, consumer); err != nil {
 					if errors.Is(err, context.Canceled) ||
 						errors.Is(err, context.DeadlineExceeded) {
 						w.logger.Info().
@@ -145,36 +163,55 @@ func (w *Worker) Run(ctx context.Context) error {
 
 }
 
-func (w *Worker) processOne(ctx context.Context) error {
-	result, err := w.broker.Client().BRPop(
-		ctx,
-		2*time.Second,
-		broker.TaskQueue,
-	).Result()
+func (w *Worker) runPendingJobRecovery(
+	ctx context.Context,
+	consumer string,
+) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			w.recoverPendingJobs(
+				ctx,
+				consumer,
+			)
+		}
+	}
+}
+
+func (w *Worker) processOne(ctx context.Context, consumer string) error {
+	messageID, job, err := w.broker.ReadTaskJob(
+		ctx,
+		consumer,
+	)
 	if err != nil {
 		return err
 	}
 
-	if len(result) != 2 {
-		return fmt.Errorf("invalid redis task response")
+	if err := w.executeJob(ctx, job, messageID, consumer); err != nil {
+		return err
 	}
 
-	var job broker.TaskJob
-
-	if err := json.Unmarshal(
-		[]byte(result[1]),
-		&job,
+	if err := w.broker.AcknowledgeTaskJob(
+		ctx,
+		messageID,
 	); err != nil {
-		return fmt.Errorf("failed to decode task job: %w", err)
+		return err
 	}
 
-	return w.executeJob(ctx, job)
+	return nil
 }
 
 func (w *Worker) executeJob(
 	ctx context.Context,
 	job broker.TaskJob,
+	messageID string,
+	consumer string,
 ) error {
 	if strings.TrimSpace(job.TaskID) == "" {
 		return errors.New("task job has empty task id")
@@ -206,17 +243,71 @@ func (w *Worker) executeJob(
 	)
 
 	if errors.Is(err, executions.ErrExecutionAlreadyExist) {
-		w.logger.Info().
+		execution, findErr := w.executionService.FindExisting(
+			ctx,
+			job.TriggerID,
+			job.ScheduledAt,
+		)
+
+		if findErr != nil {
+			return fmt.Errorf("failed to find existing execution: %w", findErr)
+		}
+		if execution == nil {
+			return fmt.Errorf("execution already exists but could not be found")
+		}
+
+		if execution.Status != executions.StatusRunning {
+			w.logger.Info().
+				Str("execution_id", execution.ID).
+				Str("task_id", task.ID).
+				Str("trigger_id", job.TriggerID).
+				Time("scheduled_at", job.ScheduledAt).
+				Str("status", execution.Status).
+				Msg("duplicate scheduled job ignored")
+
+			return nil
+		}
+
+		reclaimed, reclaimErr := w.executionService.Reclaim(
+			ctx,
+			execution,
+		)
+		if reclaimErr != nil {
+			return fmt.Errorf("failed to reclaim existing execution: %w", reclaimErr)
+		}
+
+		if !reclaimed {
+			w.logger.Info().
+				Str("execution_id", execution.ID).
+				Str("task_id", task.ID).
+				Str("trigger_id", job.TriggerID).
+				Msg("existing execution is still active; skipping")
+
+			return nil
+		}
+
+		w.logger.Warn().
+			Str("execution_id", execution.ID).
 			Str("task_id", task.ID).
 			Str("trigger_id", job.TriggerID).
-			Time("scheduled_at", job.ScheduledAt).
-			Msg("duplicate scheduled job ignored")
-
-		return nil
-	}
-	if err != nil {
+			Msg("reclaimed stale execution")
+	} else if err != nil {
 		return fmt.Errorf("failed to start execution: %w", err)
 	}
+
+	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
+	defer heartbeatCancel()
+
+	go w.runExecutionHeartbeat(
+		heartbeatCtx,
+		execution.ID,
+	)
+
+	go w.runTaskJobRenewal(
+		heartbeatCtx,
+		messageID,
+		consumer,
+	)
 
 	w.logger.Info().
 		Str("execution_id", execution.ID).
@@ -294,6 +385,71 @@ func (w *Worker) executeJob(
 		Msg("execution completed successfully")
 
 	return nil
+}
+
+func (w *Worker) runTaskJobRenewal(
+	ctx context.Context,
+	messageID string,
+	consumer string,
+) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			if err := w.broker.RenewTaskJob(
+				ctx,
+				messageID,
+				consumer,
+			); err != nil {
+				if errors.Is(err, context.Canceled) ||
+					errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+
+				w.logger.Error().
+					Err(err).
+					Str("message_id", messageID).
+					Str("consumer", consumer).
+					Msg("failed to renew task job")
+			}
+		}
+	}
+}
+
+func (w *Worker) runExecutionHeartbeat(
+	ctx context.Context,
+	executionID string,
+) {
+	ticker := time.NewTicker(heartbeatInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case <-ticker.C:
+			if err := w.executionService.Heartbeat(
+				ctx,
+				executionID,
+			); err != nil {
+				if errors.Is(err, context.Canceled) ||
+					errors.Is(err, context.DeadlineExceeded) {
+					return
+				}
+
+				w.logger.Error().
+					Err(err).
+					Str("execution_id", executionID).
+					Msg("failed to update execution heartbeat")
+			}
+		}
+	}
 }
 
 func (w *Worker) executeActions(
@@ -506,5 +662,71 @@ func (w *Worker) logActionError(
 			Err(logErr).
 			Str("execution_id", executionID).
 			Msg("failed to persist action error")
+	}
+}
+
+func (w *Worker) recoverPendingJobs(
+	ctx context.Context,
+	consumer string,
+) {
+	messages, err := w.broker.ClaimStaleTaskJobs(
+		ctx,
+		consumer,
+	)
+	if err != nil {
+		w.logger.Error().
+			Err(err).
+			Msg("failed to claim stale task jobs")
+
+		return
+	}
+
+	for _, message := range messages {
+		rawJob, ok := message.Values["job"].(string)
+		if !ok {
+			w.logger.Error().
+				Str("message_id", message.ID).
+				Msg("claimed task job has invalid payload")
+
+			continue
+		}
+
+		var job broker.TaskJob
+		if err := json.Unmarshal(
+			[]byte(rawJob),
+			&job,
+		); err != nil {
+			w.logger.Error().
+				Err(err).
+				Str("message_id", message.ID).
+				Msg("failed to decode claimed task job")
+
+			continue
+		}
+		w.logger.Warn().
+			Str("message_id", message.ID).
+			Str("consumer", consumer).
+			Str("task_id", job.TaskID).
+			Str("trigger_id", job.TriggerID).
+			Msg("claimed stale task job")
+
+		if err := w.executeJob(ctx, job, message.ID, consumer); err != nil {
+			w.logger.Error().
+				Err(err).
+				Str("message_id", message.ID).
+				Msg("failed to execute claimed task job")
+
+			continue
+		}
+
+		if err := w.broker.AcknowledgeTaskJob(
+			ctx,
+			message.ID,
+		); err != nil {
+			w.logger.Error().
+				Err(err).
+				Str("message_id", message.ID).
+				Msg("failed to acknowledge recovered task job")
+		}
 	}
 }

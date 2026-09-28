@@ -18,6 +18,7 @@ type Execution struct {
 	ScheduledAt  time.Time  `json:"scheduled_at"`
 	Status       string     `json:"status"`
 	StartedAt    time.Time  `json:"started_at"`
+	HeartbeatAt  *time.Time `json:"heartbeat_at,omitempty"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 	DurationMs   *int64     `json:"duration_ms,omitempty"`
 	RetryCount   int        `json:"retry_count"`

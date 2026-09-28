@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -37,6 +38,7 @@ func (r *Repository) Create(
 			scheduled_at,
 			status,
 			started_at,
+			heartbeat_at,
 			completed_at,
 			duration_ms,
 			retry_count,
@@ -44,8 +46,8 @@ func (r *Repository) Create(
 			created_at
 		)
 		VALUES (
-			$1, $2, $3, $4, $5,
-			$6, $7, $8, $9, $10, $11
+			$1, $2, $3, $4, $5, $6,
+			$7, $8, $9, $10, $11, $12
 		)
 	`
 
@@ -58,6 +60,7 @@ func (r *Repository) Create(
 		execution.ScheduledAt,
 		execution.Status,
 		execution.StartedAt,
+		execution.HeartbeatAt,
 		execution.CompletedAt,
 		execution.DurationMs,
 		execution.RetryCount,
@@ -91,6 +94,7 @@ func (r *Repository) FindByID(
 			scheduled_at,
 			status,
 			started_at,
+			heartbeat_at,
 			completed_at,
 			duration_ms,
 			retry_count,
@@ -113,6 +117,7 @@ func (r *Repository) FindByID(
 		&execution.ScheduledAt,
 		&execution.Status,
 		&execution.StartedAt,
+		&execution.HeartbeatAt,
 		&execution.CompletedAt,
 		&execution.DurationMs,
 		&execution.RetryCount,
@@ -144,6 +149,7 @@ func (r *Repository) FindByTriggerAndScheduledAt(
 			scheduled_at,
 			status,
 			started_at,
+			heartbeat_at,
 			completed_at,
 			duration_ms,
 			retry_count,
@@ -168,6 +174,7 @@ func (r *Repository) FindByTriggerAndScheduledAt(
 		&execution.ScheduledAt,
 		&execution.Status,
 		&execution.StartedAt,
+		&execution.HeartbeatAt,
 		&execution.CompletedAt,
 		&execution.DurationMs,
 		&execution.RetryCount,
@@ -199,6 +206,7 @@ func (r *Repository) FindByIDAndUser(
 			e.scheduled_at,
 			e.status,
 			e.started_at,
+			e.heartbeat_at,
 			e.completed_at,
 			e.duration_ms,
 			e.retry_count,
@@ -224,6 +232,7 @@ func (r *Repository) FindByIDAndUser(
 		&execution.ScheduledAt,
 		&execution.Status,
 		&execution.StartedAt,
+		&execution.HeartbeatAt,
 		&execution.CompletedAt,
 		&execution.DurationMs,
 		&execution.RetryCount,
@@ -250,17 +259,19 @@ func (r *Repository) Update(
 		UPDATE executions
 		SET
 			status = $1,
-			completed_at = $2,
-			duration_ms = $3,
-			retry_count = $4,
-			error_message = $5
-		WHERE id = $6
+			heartbeat_at = $2,
+			completed_at = $3,
+			duration_ms = $4,
+			retry_count = $5,
+			error_message = $6
+		WHERE id = $7
 	`
 
 	result, err := r.db.Exec(
 		ctx,
 		query,
 		execution.Status,
+		execution.HeartbeatAt,
 		execution.CompletedAt,
 		execution.DurationMs,
 		execution.RetryCount,
@@ -270,6 +281,34 @@ func (r *Repository) Update(
 
 	if err != nil {
 		return fmt.Errorf("failed to update execution: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrExecutionNotFound
+	}
+
+	return nil
+}
+
+func (r *Repository) IncrementRetryCount(
+	ctx context.Context,
+	executionID string,
+) error {
+	const query = `
+		UPDATE executions
+		SET retry_count = retry_count + 1
+		WHERE id = $1
+			AND status = 'RUNNING'
+	`
+
+	result, err := r.db.Exec(
+		ctx,
+		query,
+		executionID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to increment execution retry count: %w", err)
 	}
 
 	if result.RowsAffected() == 0 {
@@ -330,7 +369,7 @@ func (r *Repository) FindLogs(
 
 	rows, err := r.db.Query(ctx, query, executionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fing execution logs: %w", err)
+		return nil, fmt.Errorf("failed to find execution logs: %w", err)
 	}
 	defer rows.Close()
 
@@ -408,4 +447,149 @@ func (r *Repository) FindLogsByUser(
 	}
 
 	return logs, nil
+}
+
+func (r *Repository) Heartbeat(
+	ctx context.Context,
+	executionID string,
+	heartbeatAt time.Time,
+) error {
+	const query = `
+		UPDATE executions
+		SET heartbeat_at = $1
+		WHERE id = $2
+			AND status = 'RUNNING'
+	`
+
+	result, err := r.db.Exec(
+		ctx,
+		query,
+		heartbeatAt,
+		executionID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update execution heartbeat: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrExecutionNotFound
+	}
+
+	return nil
+}
+
+func (r *Repository) Complete(
+	ctx context.Context,
+	execution *Execution,
+) error {
+	const query = `
+		UPDATE executions
+		SET
+			status = $1,
+			heartbeat_at = NULL,
+			completed_at = $2,
+			duration_ms = $3,
+			retry_count = $4,
+			error_message = $5
+		WHERE id = $6
+			AND status = 'RUNNING'
+	`
+
+	result, err := r.db.Exec(
+		ctx,
+		query,
+		execution.Status,
+		execution.CompletedAt,
+		execution.DurationMs,
+		execution.RetryCount,
+		execution.ErrorMessage,
+		execution.ID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to complete execution: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return ErrExecutionNotFound
+	}
+
+	return nil
+}
+
+func (r *Repository) RecoveryStaleRunning(
+	ctx context.Context,
+	before time.Time,
+) ([]string, error) {
+	const query = `
+		UPDATE executions
+		SET
+			status = 'FAILED',
+			completed_at = $1,
+			error_message = 'worker heartbeat expired',
+			heartbeat_at = NULL,
+			duration_ms = EXTRACT(
+				EPOCH FROM ($1 - started_at)
+			) * 1000
+		WHERE status = 'RUNNING'
+			AND heartbeat_at is NOT NULL
+			AND heartbeat_at < $2
+		RETURNING id
+	`
+
+	rows, err := r.db.Query(
+		ctx,
+		query,
+		time.Now().UTC(),
+		before,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to recover stale executions: %w", err)
+	}
+	defer rows.Close()
+
+	var executionIDs []string
+
+	for rows.Next() {
+		var executionID string
+
+		if err := rows.Scan(&executionID); err != nil {
+			return nil, fmt.Errorf("failed to scan recovered execution: %w", err)
+		}
+
+		executionIDs = append(executionIDs, executionID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate recovered executions: %w", err)
+	}
+
+	return executionIDs, nil
+}
+
+func (r *Repository) ReclaimExecution(
+	ctx context.Context,
+	executionID string,
+	heartbeatAt time.Time,
+) (bool, error) {
+	const query = `
+		UPDATE executions
+		SET
+			heartbeat_at = $1
+		WHERE id = $2
+			AND status = 'RUNNING'
+			AND heartbeat_at is NOT NULL
+			AND heartbeat_at < $1 - INTERVAL '2 minutes'
+	`
+	result, err := r.db.Exec(
+		ctx,
+		query,
+		heartbeatAt,
+		executionID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("failed to reclaim execution: %w", err)
+	}
+
+	return result.RowsAffected() == 1, nil
 }
