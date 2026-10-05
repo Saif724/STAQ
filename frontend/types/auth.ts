@@ -48,3 +48,24 @@ export type LogoutRequest = {
 export type LogoutResponseWrapper = {
     data: string;
 };
+
+export type VerifyEmailRequest = {
+    email: string;
+    code: string;
+};
+
+export type ResendVerificationRequest = {
+    email: string;
+};
+
+export type MessageResponse = {
+    message: string;
+};
+
+export type MessageResponseWrapper = {
+    data: MessageResponse;
+};
+
+export type VerifyEmailResponseWrapper = MessageResponseWrapper;
+
+export type ResendVerificationResponseWrapper = MessageResponseWrapper;

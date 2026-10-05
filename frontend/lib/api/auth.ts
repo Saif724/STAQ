@@ -8,6 +8,10 @@ import type {
     RefreshResponseWrapper,
     RegisterRequest,
     RegisterResponseWrapper,
+    ResendVerificationRequest,
+    ResendVerificationResponseWrapper,
+    VerifyEmailRequest,
+    VerifyEmailResponseWrapper,
 } from "@/types/auth";
 
 export async function login(
@@ -48,4 +52,27 @@ export async function logout(
         auth: false,
         body: JSON.stringify(data),
     });
+}
+
+export async function verifyEmail(
+    data: VerifyEmailRequest,
+): Promise<VerifyEmailResponseWrapper> {
+    return apiRequest<VerifyEmailResponseWrapper>("/auth/verify-email", {
+        method: "POST",
+        auth: false,
+        body: JSON.stringify(data),
+    });
+}
+
+export async function resendVerification(
+    data: ResendVerificationRequest,
+): Promise<ResendVerificationResponseWrapper> {
+    return apiRequest<ResendVerificationResponseWrapper>(
+        "/auth/resend-verification",
+        {
+            method: "POST",
+            auth: false,
+            body: JSON.stringify(data),
+        },
+    );
 }
