@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 
@@ -18,17 +19,19 @@ export const metadata: Metadata = {
     default: "STAQ",
     template: "%s | STAQ",
   },
-  description: "Schedule, automate, and monitor reliable workflows with STAQ.",
+  description:
+    "Schedule, automate, and monitor reliable workflows with STAQ.",
 };
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full">
