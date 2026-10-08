@@ -76,3 +76,13 @@ export async function resendVerification(
         },
     );
 }
+
+export async function exchangeGoogleLoginCode(
+    code: string,
+): Promise<LoginResponseWrapper> {
+    return apiRequest<LoginResponseWrapper>("/auth/google/exchange", {
+        method: "POST",
+        auth: false,
+        body: JSON.stringify({ code }),
+    });
+}

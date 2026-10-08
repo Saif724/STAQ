@@ -3,13 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import {
-  ArrowLeft,
-  Eye,
-  EyeOff,
-  LockKeyhole,
-  Zap,
-} from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, LockKeyhole, Zap } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -29,14 +23,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-const loginSchema = z.object({
-  email: z
-    .string()
-    .email("Please enter a valid email address"),
+import { config } from "@/lib/config";
 
-  password: z
-    .string()
-    .min(1, "Password is required"),
+const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+
+  password: z.string().min(1, "Password is required"),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -118,7 +110,6 @@ export default function LoginPage() {
               <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
                 <Zap className="size-5 fill-current" />
               </span>
-
               STAQ
             </Link>
           </div>
@@ -154,9 +145,7 @@ export default function LoginPage() {
                 >
                   <p className="text-2xl font-semibold">{value}</p>
 
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {label}
-                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">{label}</p>
                 </div>
               ))}
             </div>
@@ -179,7 +168,6 @@ export default function LoginPage() {
                 <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
                   <Zap className="size-5 fill-current" />
                 </span>
-
                 STAQ
               </Link>
             </div>
@@ -191,9 +179,7 @@ export default function LoginPage() {
                 </div>
 
                 <div>
-                  <CardTitle className="text-2xl">
-                    Welcome back
-                  </CardTitle>
+                  <CardTitle className="text-2xl">Welcome back</CardTitle>
 
                   <CardDescription className="mt-2">
                     Sign in to continue to your STAQ workspace.
@@ -202,15 +188,10 @@ export default function LoginPage() {
               </CardHeader>
 
               <CardContent>
-                <form
-                  onSubmit={handleSubmit(onSubmit)}
-                  className="space-y-5"
-                >
+                <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
                   {/* Email */}
                   <div className="space-y-2">
-                    <Label htmlFor="email">
-                      Email
-                    </Label>
+                    <Label htmlFor="email">Email</Label>
 
                     <Input
                       id="email"
@@ -231,9 +212,7 @@ export default function LoginPage() {
                   {/* Password */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="password">
-                        Password
-                      </Label>
+                      <Label htmlFor="password">Password</Label>
 
                       <span className="text-xs text-muted-foreground">
                         Forgot password?
@@ -252,14 +231,10 @@ export default function LoginPage() {
 
                       <button
                         type="button"
-                        onClick={() =>
-                          setShowPassword((value) => !value)
-                        }
+                        onClick={() => setShowPassword((value) => !value)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
                         aria-label={
-                          showPassword
-                            ? "Hide password"
-                            : "Show password"
+                          showPassword ? "Hide password" : "Show password"
                         }
                       >
                         {showPassword ? (
@@ -293,9 +268,7 @@ export default function LoginPage() {
                     className="h-11 w-full transition-transform active:scale-[0.98]"
                     disabled={isSubmitting}
                   >
-                    {isSubmitting
-                      ? "Signing in..."
-                      : "Sign in"}
+                    {isSubmitting ? "Signing in..." : "Sign in"}
                   </Button>
                 </form>
 
@@ -303,21 +276,45 @@ export default function LoginPage() {
                 <div className="my-6 flex items-center gap-3">
                   <div className="h-px flex-1 bg-border" />
 
-                  <span className="text-xs text-muted-foreground">
-                    OR
-                  </span>
+                  <span className="text-xs text-muted-foreground">OR</span>
 
                   <div className="h-px flex-1 bg-border" />
                 </div>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 w-full"
-                  disabled
-                >
-                  Continue with Google
-                </Button>
+                <div className="w-full">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex h-11 w-full items-center justify-center gap-2"
+                    onClick={() => {
+                      window.location.assign(`${config.apiUrl}/auth/google`);
+                    }}
+                  >
+                    <svg
+                      className="h-5 w-5 shrink-0"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.05 5.05 0 0 1-2.2 3.31v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.09Z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.15v2.84A11 11 0 0 0 12 23Z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.43.34-2.1V7.06H2.15A11 11 0 0 0 1 12c0 1.78.43 3.46 1.15 4.94l3.69-2.84Z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.37c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 1.44 14.97 0 12 0a11 11 0 0 0-9.85 7.06l3.69 2.84c.87-2.6 3.3-4.53 6.16-4.53Z"
+                      />
+                    </svg>
+                    <span>Continue with Google</span>
+                  </Button>
+                </div>
 
                 {/* Register */}
                 <p className="mt-6 text-center text-sm text-muted-foreground">

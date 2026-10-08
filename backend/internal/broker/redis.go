@@ -110,6 +110,8 @@ func (r *Redis) PublishTaskJob(
 		ctx,
 		&redis.XAddArgs{
 			Stream: TaskStream,
+			MaxLen: 10000,
+			Approx: true,
 			Values: map[string]interface{}{
 				"job": string(payload),
 			},
@@ -134,7 +136,7 @@ func (r *Redis) ReadTaskJob(
 			Consumer: consumer,
 			Streams:  []string{TaskStream, ">"},
 			Count:    1,
-			Block:    2 * time.Second,
+			Block:    15 * time.Second,
 		},
 	).Result()
 

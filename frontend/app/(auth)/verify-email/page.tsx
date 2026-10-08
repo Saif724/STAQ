@@ -1,8 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import {
+  useRouter,
+  useSearchParams,
+} from "next/navigation";
+import { Suspense, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -35,7 +38,7 @@ const verifySchema = z.object({
 
 type VerifyFormData = z.infer<typeof verifySchema>;
 
-export default function VerifyEmailPage() {
+function VerifyEmailContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -95,10 +98,7 @@ export default function VerifyEmailPage() {
     setIsResending(true);
 
     try {
-      const response = await resendVerification({
-        email,
-      });
-
+      const response = await resendVerification({ email });
       setResendMessage(response.data.message);
     } catch (error) {
       if (error instanceof ApiError) {
@@ -271,5 +271,19 @@ export default function VerifyEmailPage() {
         </CardContent>
       </Card>
     </main>
+  );
+}
+
+export default function VerifyEmailPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-7 w-7 animate-spin" />
+        </main>
+      }
+    >
+      <VerifyEmailContent />
+    </Suspense>
   );
 }
