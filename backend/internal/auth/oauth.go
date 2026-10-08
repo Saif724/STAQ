@@ -21,9 +21,12 @@ import (
 )
 
 const (
-	googleProvider     = "google"
-	oauthStateLifetime = 10 * time.Minute
+	googleProvider         = "google"
+	oauthStateLifetime     = 10 * time.Minute
+	oauthLoginCodeLifetime = 60 * time.Second
 )
+
+var ErrInvalidOAuthLoginCode = errors.New("invalid or expired oauth login code")
 
 type GoogleUser struct {
 	ID            string `json:"sub"`
@@ -49,7 +52,6 @@ func NewOAuthService(
 	cfg config.GoogleConfig,
 	redisClient *redis.Client,
 ) *OAuthService {
-
 	return &OAuthService{
 		usersService:     usersService,
 		oauthRepository:  oauthRepository,
@@ -90,37 +92,29 @@ func (s *OAuthService) AuthorizationURL(
 
 	key := "oauth:state:" + state
 
-	if err := s.redis.Set(
-		ctx,
-		key,
-		"1",
-		oauthStateLifetime,
-	).Err(); err != nil {
-		return "", "", fmt.Errorf(
-			"failed to store oauth state: %w",
-			err,
-		)
+	if err := s.redis.Set(ctx, key, "1", oauthStateLifetime).Err(); err != nil {
+		return "", "", fmt.Errorf("failed to store oauth state: %w", err)
 	}
 
-	url := s.googleConfig.AuthCodeURL(
+	authURL := s.googleConfig.AuthCodeURL(
 		state,
 		oauth2.AccessTypeOffline,
 	)
 
-	return url, state, nil
+	return authURL, state, nil
 }
 
 func (s *OAuthService) GoogleCallback(
 	ctx context.Context,
 	code string,
-) (string, string, error) {
+) (string, error) {
 	if strings.TrimSpace(code) == "" {
-		return "", "", errors.New("authorization code is required")
+		return "", errors.New("authorization code is required")
 	}
 
 	token, err := s.googleConfig.Exchange(ctx, code)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to exchange google authorization code: %w", err)
+		return "", fmt.Errorf("failed to exchange google authorization code: %w", err)
 	}
 
 	client := s.googleConfig.Client(ctx, token)
@@ -132,30 +126,30 @@ func (s *OAuthService) GoogleCallback(
 		nil,
 	)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to create google userinfo request: %w", err)
+		return "", fmt.Errorf("failed to create google userinfo request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to fetch google user info: %w", err)
+		return "", fmt.Errorf("failed to fetch google user info: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", "", fmt.Errorf("google user info returned status %d", resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("google user info returned status %d", resp.StatusCode)
 	}
 
 	var googleUser GoogleUser
 	if err := json.NewDecoder(resp.Body).Decode(&googleUser); err != nil {
-		return "", "", fmt.Errorf("failed to decode google user info: %w", err)
+		return "", fmt.Errorf("failed to decode google user info: %w", err)
 	}
 
 	if googleUser.ID == "" || googleUser.Email == "" {
-		return "", "", errors.New("google account information is incomplete")
+		return "", errors.New("google account information is incomplete")
 	}
 
 	if !googleUser.EmailVerified {
-		return "", "", errors.New("google email is not verified")
+		return "", errors.New("google email is not verified")
 	}
 
 	return s.authenticateGoogleUser(ctx, googleUser)
@@ -164,7 +158,7 @@ func (s *OAuthService) GoogleCallback(
 func (s *OAuthService) authenticateGoogleUser(
 	ctx context.Context,
 	googleUser GoogleUser,
-) (string, string, error) {
+) (string, error) {
 	account, err := s.oauthRepository.FindByProvider(
 		ctx,
 		googleProvider,
@@ -172,11 +166,11 @@ func (s *OAuthService) authenticateGoogleUser(
 	)
 
 	if err == nil {
-		return s.issueTokens(ctx, account.UserID)
+		return account.UserID, nil
 	}
 
 	if !errors.Is(err, ErrOAuthAccountNotFound) {
-		return "", "", err
+		return "", err
 	}
 
 	existingUser, err := s.usersService.GetByEmail(
@@ -186,7 +180,7 @@ func (s *OAuthService) authenticateGoogleUser(
 
 	if err == nil {
 		if !existingUser.IsActive {
-			return "", "", ErrAccountInactive
+			return "", ErrAccountInactive
 		}
 
 		account := &OAuthAccount{
@@ -199,7 +193,7 @@ func (s *OAuthService) authenticateGoogleUser(
 		}
 
 		if err := s.oauthRepository.Create(ctx, account); err != nil {
-			return "", "", err
+			return "", err
 		}
 
 		if !existingUser.EmailVerified {
@@ -207,21 +201,15 @@ func (s *OAuthService) authenticateGoogleUser(
 				ctx,
 				existingUser.ID,
 			); err != nil {
-				return "", "", fmt.Errorf(
-					"failed to verify user email: %w",
-					err,
-				)
+				return "", fmt.Errorf("failed to verify user email: %w", err)
 			}
 		}
 
-		return s.issueTokens(ctx, existingUser.ID)
+		return existingUser.ID, nil
 	}
 
 	if !errors.Is(err, users.ErrUserNotFound) {
-		return "", "", fmt.Errorf(
-			"failed to find existing user: %w",
-			err,
-		)
+		return "", fmt.Errorf("failed to find existing user: %w", err)
 	}
 
 	randomPassword := uuid.NewString() + uuid.NewString()
@@ -232,22 +220,12 @@ func (s *OAuthService) authenticateGoogleUser(
 		googleUser.Email,
 		randomPassword,
 	)
-
 	if err != nil {
-		return "", "", fmt.Errorf(
-			"failed to create oauth user: %w",
-			err,
-		)
+		return "", fmt.Errorf("failed to create oauth user: %w", err)
 	}
 
-	if err := s.usersService.MarkEmailVerified(
-		ctx,
-		user.ID,
-	); err != nil {
-		return "", "", fmt.Errorf(
-			"failed to verify oauth user email: %w",
-			err,
-		)
+	if err := s.usersService.MarkEmailVerified(ctx, user.ID); err != nil {
+		return "", fmt.Errorf("failed to verify oauth user email: %w", err)
 	}
 
 	newAccount := &OAuthAccount{
@@ -260,52 +238,92 @@ func (s *OAuthService) authenticateGoogleUser(
 	}
 
 	if err := s.oauthRepository.Create(ctx, newAccount); err != nil {
-		return "", "", fmt.Errorf(
-			"failed to create oauth account: %w",
-			err,
-		)
+		return "", fmt.Errorf("failed to create oauth account: %w", err)
 	}
 
-	return s.issueTokens(ctx, user.ID)
+	return user.ID, nil
 }
 
 func (s *OAuthService) issueTokens(
 	ctx context.Context,
 	userID string,
 ) (string, string, error) {
-
 	accessToken, err := s.jwtManager.GenerateAccessToken(userID)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to generate access token: %w", err)
 	}
 
 	refreshToken, err := generateRefreshToken()
-
 	if err != nil {
-		return "", "", fmt.Errorf(
-			"failed to generate refresh token: %w",
-			err,
-		)
+		return "", "", fmt.Errorf("failed to generate refresh token: %w", err)
 	}
-
-	refreshTokenHash := hashRefreshToken(refreshToken)
 
 	record := &RefreshToken{
 		ID:        uuid.NewString(),
 		UserID:    userID,
-		TokenHash: refreshTokenHash,
+		TokenHash: hashRefreshToken(refreshToken),
 		ExpiresAt: time.Now().UTC().Add(refreshTokenLifeTime),
 		CreatedAt: time.Now().UTC(),
 	}
 
 	if err := s.refreshTokenRepo.Create(ctx, record); err != nil {
-		return "", "", fmt.Errorf(
-			"failed to store refresh token: %w",
-			err,
-		)
+		return "", "", fmt.Errorf("failed to store refresh token: %w", err)
 	}
 
 	return accessToken, refreshToken, nil
+}
+
+func generateOAuthLoginCode() (string, error) {
+	b := make([]byte, 32)
+
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate oauth login code: %w", err)
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+func (s *OAuthService) CreateLoginCode(
+	ctx context.Context,
+	userID string,
+) (string, error) {
+	code, err := generateOAuthLoginCode()
+	if err != nil {
+		return "", err
+	}
+
+	key := "oauth:login-code:" + code
+
+	if err := s.redis.Set(ctx, key, userID, oauthLoginCodeLifetime).Err(); err != nil {
+		return "", fmt.Errorf("failed to store oauth login code: %w", err)
+	}
+
+	return code, nil
+}
+
+func (s *OAuthService) ExchangeLoginCode(
+	ctx context.Context,
+	code string,
+) (string, string, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", "", ErrInvalidOAuthLoginCode
+	}
+
+	key := "oauth:login-code:" + code
+
+	userID, err := s.redis.GetDel(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
+		return "", "", ErrInvalidOAuthLoginCode
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("failed to consume oauth login code: %w", err)
+	}
+	if userID == "" {
+		return "", "", ErrInvalidOAuthLoginCode
+	}
+
+	return s.issueTokens(ctx, userID)
 }
 
 func (s *OAuthService) ValidateOAuthState(
@@ -313,30 +331,18 @@ func (s *OAuthService) ValidateOAuthState(
 	state string,
 ) error {
 	state = strings.TrimSpace(state)
-
 	if state == "" {
 		return errors.New("oauth state is required")
 	}
 
 	key := "oauth:state:" + state
 
-	exists, err := s.redis.Exists(ctx, key).Result()
-	if err != nil {
-		return fmt.Errorf(
-			"failed to validate oauth state: %w",
-			err,
-		)
-	}
-
-	if exists != 1 {
+	_, err := s.redis.GetDel(ctx, key).Result()
+	if errors.Is(err, redis.Nil) {
 		return errors.New("invalid or expired oauth state")
 	}
-
-	if err := s.redis.Del(ctx, key).Err(); err != nil {
-		return fmt.Errorf(
-			"failed to consume oauth state: %w",
-			err,
-		)
+	if err != nil {
+		return fmt.Errorf("failed to validate oauth state: %w", err)
 	}
 
 	return nil

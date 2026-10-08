@@ -120,6 +120,7 @@ func main() {
 	authHandler := auth.NewHandler(
 		authService,
 		oauthService,
+		cfg.App.FrontendURL,
 	)
 
 	gmailOAuthService := emailIntegration.NewGmailOAuthService(

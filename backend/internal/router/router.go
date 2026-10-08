@@ -44,6 +44,7 @@ func New(
 
 	mux.HandleFunc("GET /auth/google", authHandler.GoogleLogin)
 	mux.HandleFunc("GET /auth/google/callback", authHandler.GoogleCallback)
+	mux.HandleFunc("POST /auth/google/exchange", authHandler.GoogleExchange)
 
 	mux.Handle(
 		"GET /connections/google",
