@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/Saif724/STAQ/backend/internal/broker"
 	"github.com/Saif724/STAQ/backend/internal/config"
@@ -76,10 +78,8 @@ func main() {
 		redisClient,
 		logg,
 	)
-	schedulerRunner := scheduler.New(
-		schedulerService,
-		logg,
-	)
+
+	schedulerRunner := scheduler.New(schedulerService, logg)
 
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -88,17 +88,37 @@ func main() {
 	)
 	defer stop()
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8081"
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	healthServer := &http.Server{
+		Addr:              ":" + port,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	healthServerDone := make(chan struct{})
+
 	go func() {
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "8080"
-		}
-		http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("ok"))
-		})
-		if err := http.ListenAndServe(":"+port, nil); err != nil {
-			logg.Error().Err(err).Msg("health server failed")
+		defer close(healthServerDone)
+
+		logg.Info().
+			Str("address", ":"+port).
+			Msg("Scheduler health server starting")
+
+		if err := healthServer.ListenAndServe(); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			logg.Error().
+				Err(err).
+				Msg("Scheduler health server failed")
 		}
 	}()
 
@@ -106,6 +126,21 @@ func main() {
 
 	<-ctx.Done()
 
-	logg.Info().
-		Msg("Scheduler service shutting down")
+	logg.Info().Msg("Scheduler shutdown signal received")
+
+	shutdownCtx, cancel := context.WithTimeout(
+		context.Background(),
+		10*time.Second,
+	)
+	defer cancel()
+
+	if err := healthServer.Shutdown(shutdownCtx); err != nil {
+		logg.Error().
+			Err(err).
+			Msg("Scheduler health server shutdown failed")
+	}
+
+	<-healthServerDone
+
+	logg.Info().Msg("Scheduler service stopped")
 }

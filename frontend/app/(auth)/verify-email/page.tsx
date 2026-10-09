@@ -5,11 +5,11 @@ import {
   useRouter,
   useSearchParams,
 } from "next/navigation";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Eye, EyeOff, Loader2, MailCheck } from "lucide-react";
+import { Loader2, MailCheck } from "lucide-react";
 
 import { ApiError } from "@/lib/api/client";
 import {
@@ -27,6 +27,11 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+const RESEND_COOLDOWN_SECONDS = 30;
+
+const gridBackgroundClass =
+  "absolute inset-0 -z-10 bg-[linear-gradient(to_right,var(--border)_1px,transparent_1px),linear-gradient(to_bottom,var(--border)_1px,transparent_1px)] bg-size-[48px_48px] opacity-30";
 
 const verifySchema = z.object({
   code: z
@@ -49,6 +54,17 @@ function VerifyEmailContent() {
   const [resendMessage, setResendMessage] = useState("");
   const [verified, setVerified] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+
+    const timer = setTimeout(() => {
+      setCooldown((value) => value - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [cooldown]);
 
   const {
     register,
@@ -100,6 +116,7 @@ function VerifyEmailContent() {
     try {
       const response = await resendVerification({ email });
       setResendMessage(response.data.message);
+      setCooldown(RESEND_COOLDOWN_SECONDS);
     } catch (error) {
       if (error instanceof ApiError) {
         setResendError(error.message);
@@ -116,7 +133,7 @@ function VerifyEmailContent() {
   if (verified) {
     return (
       <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-6 py-12">
-        <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--border))_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border))_1px,transparent_1px)] bg-[size:48px_48px] opacity-30" />
+        <div className={gridBackgroundClass} />
 
         <div className="absolute left-1/2 top-1/3 -z-10 h-80 w-80 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
 
@@ -150,7 +167,7 @@ function VerifyEmailContent() {
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-6 py-12">
-      <div className="absolute inset-0 -z-10 bg-[linear-gradient(to_right,hsl(var(--border))_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border))_1px,transparent_1px)] bg-[size:48px_48px] opacity-30" />
+      <div className={gridBackgroundClass} />
 
       <div className="absolute left-1/2 top-1/3 -z-10 h-80 w-80 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl" />
 
@@ -235,13 +252,15 @@ function VerifyEmailContent() {
               variant="outline"
               className="w-full"
               onClick={handleResend}
-              disabled={isResending}
+              disabled={isResending || cooldown > 0}
             >
               {isResending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Sending...
                 </>
+              ) : cooldown > 0 ? (
+                `Resend in ${cooldown}s`
               ) : (
                 "Resend verification email"
               )}
