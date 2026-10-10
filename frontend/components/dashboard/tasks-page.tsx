@@ -43,17 +43,6 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-function getInitials(name: string) {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "U"
-  );
-}
-
 function StatusBadge({ status }: { status: TaskStatus }) {
   const styles: Record<TaskStatus, string> = {
     Active:

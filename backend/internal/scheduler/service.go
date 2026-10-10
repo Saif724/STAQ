@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	DefaultPollInterval = 10 * time.Second
+	DefaultPollInterval = 30 * time.Second
 	maxCatchUpWindow    = 2 * time.Minute
 )
 

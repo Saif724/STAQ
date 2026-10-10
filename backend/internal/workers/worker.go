@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -98,8 +100,10 @@ func NewRegistry(
 }
 
 func (w *Worker) Run(ctx context.Context) error {
+	concurrency := workerConcurrency()
+
 	w.logger.Info().
-		Int("concurrency", defaultConcurrency).
+		Int("concurrency", concurrency).
 		Msg("worker pool started")
 
 	if err := w.broker.EnsureTaskConsumerGroup(ctx); err != nil {
@@ -115,7 +119,7 @@ func (w *Worker) Run(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < defaultConcurrency; i++ {
+	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
 
 		go func(workerID int) {
@@ -131,6 +135,8 @@ func (w *Worker) Run(ctx context.Context) error {
 				Str("consumer", consumer).
 				Msg("worker started")
 
+			consecutiveErrors := 0
+
 			for {
 				if err := w.processOne(ctx, consumer); err != nil {
 					if errors.Is(err, context.Canceled) ||
@@ -143,13 +149,21 @@ func (w *Worker) Run(ctx context.Context) error {
 					}
 
 					if errors.Is(err, redis.Nil) {
+						consecutiveErrors = 0
 						continue
 					}
 
+					consecutiveErrors++
+
 					w.logger.Error().
 						Int("worker_id", workerID).
+						Int("consecutive_errors", consecutiveErrors).
 						Err(err).
 						Msg("failed to process task job")
+
+					if !sleepContext(ctx, errorBackoff(consecutiveErrors)) {
+						return
+					}
 				}
 			}
 		}(i + 1)
@@ -167,7 +181,7 @@ func (w *Worker) runPendingJobRecovery(
 	ctx context.Context,
 	consumer string,
 ) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(2 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -729,4 +743,34 @@ func (w *Worker) recoverPendingJobs(
 				Msg("failed to acknowledge recovered task job")
 		}
 	}
+}
+
+func errorBackoff(consecutive int) time.Duration {
+	delay := 5 * time.Second
+	for i := 1; i < consecutive && delay < 5*time.Minute; i++ {
+		delay *= 2
+	}
+	if delay > 5*time.Minute {
+		delay = 5 * time.Minute
+	}
+	return delay
+}
+
+func sleepContext(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func workerConcurrency() int {
+	if v, err := strconv.Atoi(os.Getenv("WORKER_CONCURRENCY")); err == nil && v > 0 {
+		return v
+	}
+	return defaultConcurrency
 }
