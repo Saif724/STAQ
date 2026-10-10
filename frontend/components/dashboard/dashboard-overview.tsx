@@ -40,6 +40,8 @@ import { clearTokens, getAccessToken } from "@/lib/auth/storage";
 import { logoutUser } from "@/lib/auth/session";
 import { Button } from "@/components/ui/button";
 
+import Sidebar from "@/components/dashboard/sidebar";
+
 type DashboardData = {
   user: CurrentUser | null;
   tasks: Task[];
@@ -132,176 +134,6 @@ function StatCard({
 
       <p className="mt-4 text-xs text-muted-foreground">{description}</p>
     </div>
-  );
-}
-
-function Sidebar({
-  mobileOpen,
-  onClose,
-  user,
-  onLogout,
-  loggingOut,
-}: {
-  mobileOpen: boolean;
-  onClose: () => void;
-  user: CurrentUser | null;
-  onLogout: () => void;
-  loggingOut: boolean;
-}) {
-  const router = useRouter();
-
-  return (
-    <>
-      {mobileOpen && (
-        <button
-          type="button"
-          aria-label="Close navigation"
-          onClick={onClose}
-          className="fixed inset-0 z-40 bg-black/40 lg:hidden"
-        />
-      )}
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col border-r border-border/80 bg-card transition-transform duration-200 lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex h-[76px] items-center justify-between border-b border-border/70 px-6">
-          <button
-            type="button"
-            onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-3"
-          >
-            <span className="flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Workflow className="size-5" />
-            </span>
-
-            <span className="text-left">
-              <span className="block text-lg font-bold tracking-tight">
-                STAQ
-              </span>
-              <span className="block text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                Automation workspace
-              </span>
-            </span>
-          </button>
-
-          <button
-            type="button"
-            aria-label="Close menu"
-            onClick={onClose}
-            className="rounded-lg p-2 text-muted-foreground hover:bg-muted lg:hidden"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="px-4 pt-6">
-          <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Workspace
-          </p>
-
-          <button
-            type="button"
-            onClick={() => {
-              router.push("/dashboard");
-              onClose();
-            }}
-            className="flex w-full items-center gap-3 rounded-xl bg-primary/10 px-3 py-2.5 text-sm font-semibold text-primary"
-          >
-            <LayoutDashboard className="size-[18px]" />
-            Overview
-            <span className="ml-auto size-1.5 rounded-full bg-primary" />
-          </button>
-
-          <div className="mt-1 space-y-1">
-            {[
-              { label: "Tasks", icon: ListTodo },
-              { label: "Queues", icon: Layers3 },
-              { label: "Connections", icon: ShieldCheck },
-            ].map(({ label, icon: Icon }) => (
-              <div
-                key={label}
-                title={`${label} page has not been implemented yet`}
-                className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground/70"
-              >
-                <Icon className="size-[18px]" />
-                {label}
-                <span className="ml-auto text-[10px] font-medium uppercase tracking-wide">
-                  Soon
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="mx-4 mt-7 border-t border-border/70" />
-
-        <div className="px-4 pt-5">
-          <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Preferences
-          </p>
-
-          <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground">
-            <Settings2 className="size-[18px]" />
-            Workspace settings
-            <span className="ml-auto text-[10px]">Soon</span>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground">
-            <CircleHelp className="size-[18px]" />
-            Help &amp; support
-          </div>
-        </div>
-
-        <div className="mt-auto p-4">
-          <div className="rounded-2xl border border-border/80 bg-muted/40 p-3.5">
-            <div className="flex items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-lg bg-background text-primary">
-                <Activity className="size-4" />
-              </span>
-              <div>
-                <p className="text-xs font-semibold">Your workspace</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Personal automation
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-              Build reliable workflows, one task at a time.
-            </p>
-          </div>
-
-          <div className="mt-4 flex items-center gap-3 border-t border-border/70 pt-4">
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-              {getInitials(user?.full_name ?? "User")}
-            </div>
-
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold">
-                {user?.full_name ?? "Your account"}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {user?.email ?? ""}
-              </p>
-            </div>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={loggingOut}
-              onClick={onLogout}
-              aria-label="Log out"
-              title="Log out"
-            >
-              <LogOut className="size-4" />
-            </Button>
-          </div>
-        </div>
-      </aside>
-    </>
   );
 }
 
@@ -593,6 +425,7 @@ export default function DashboardOverview() {
         user={data.user}
         onLogout={handleLogout}
         loggingOut={loggingOut}
+        activePage="overview"
       />
 
       <div className="min-h-screen lg:pl-[264px]">
