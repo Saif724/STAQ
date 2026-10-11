@@ -47,7 +47,6 @@ export function getQueues() {
 }
 
 export type CreateTaskRequest = {
-  queue_id: string;
   name: string;
   description: string | null;
   timeout_seconds: number;

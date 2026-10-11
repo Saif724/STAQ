@@ -21,7 +21,6 @@ func NewHandler(service *Service) *Handler {
 }
 
 type createTaskRequest struct {
-	QueueID        string  `json:"queue_id"`
 	Name           string  `json:"name"`
 	Description    *string `json:"description"`
 	TimeoutSeconds int     `json:"timeout_seconds"`
@@ -29,7 +28,6 @@ type createTaskRequest struct {
 }
 
 type updateTaskRequest struct {
-	QueueID        string  `json:"queue_id"`
 	Name           string  `json:"name"`
 	Description    *string `json:"description"`
 	Status         string  `json:"status"`
@@ -64,7 +62,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	task, err := h.service.Create(r.Context(), CreateTaskInput{
 		UserID:         userID,
-		QueueID:        req.QueueID,
 		Name:           req.Name,
 		Description:    req.Description,
 		TimeoutSeconds: req.TimeoutSeconds,
@@ -200,7 +197,6 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		UpdateTaskInput{
 			TaskID:         taskID,
 			UserID:         userID,
-			QueueID:        req.QueueID,
 			Name:           req.Name,
 			Description:    req.Description,
 			Status:         req.Status,

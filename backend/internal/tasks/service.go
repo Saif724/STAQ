@@ -49,7 +49,6 @@ func (s *Service) validateQueue(
 
 type CreateTaskInput struct {
 	UserID         string
-	QueueID        string
 	Name           string
 	Description    *string
 	TimeoutSeconds int
@@ -59,7 +58,6 @@ type CreateTaskInput struct {
 type UpdateTaskInput struct {
 	TaskID         string
 	UserID         string
-	QueueID        string
 	Name           string
 	Description    *string
 	Status         string
@@ -75,7 +73,11 @@ func (s *Service) Create(
 		return nil, errors.New("user id is required")
 	}
 
-	if err := s.validateQueue(ctx, input.QueueID); err != nil {
+	queueID, err := s.repository.FindDefaultQueueIDForUser(ctx, input.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user's default queue: %w", err)
+	}
+	if err := s.validateQueue(ctx, queueID); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +104,7 @@ func (s *Service) Create(
 	task := &Task{
 		ID:             uuid.NewString(),
 		UserID:         input.UserID,
-		QueueID:        input.QueueID,
+		QueueID:        queueID,
 		Name:           name,
 		Description:    input.Description,
 		Status:         StatusActive,
@@ -170,6 +172,15 @@ func (s *Service) Update(
 		return nil, errors.New("user id is required")
 	}
 
+	existingTask, err := s.repository.FindByIDAndUser(
+		ctx,
+		input.TaskID,
+		input.UserID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	name := strings.TrimSpace(input.Name)
 
 	if name == "" {
@@ -192,14 +203,14 @@ func (s *Service) Update(
 		return nil, errors.New("max retries cannot be negative")
 	}
 
-	if err := s.validateQueue(ctx, input.QueueID); err != nil {
+	if err := s.validateQueue(ctx, existingTask.QueueID); err != nil {
 		return nil, err
 	}
 
 	task := &Task{
-		ID:             input.TaskID,
-		UserID:         input.UserID,
-		QueueID:        input.QueueID,
+		ID:             existingTask.ID,
+		UserID:         existingTask.UserID,
+		QueueID:        existingTask.QueueID,
 		Name:           name,
 		Description:    input.Description,
 		Status:         input.Status,

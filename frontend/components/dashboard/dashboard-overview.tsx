@@ -164,7 +164,6 @@ export default function DashboardOverview() {
 
   const [taskName, setTaskName] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
-  const [taskQueueId, setTaskQueueId] = useState("");
   const [taskTimeout, setTaskTimeout] = useState("30");
   const [taskRetries, setTaskRetries] = useState("2");
 
@@ -362,11 +361,6 @@ export default function DashboardOverview() {
       return;
     }
 
-    if (!taskQueueId) {
-      setCreateTaskError("Please select a queue.");
-      return;
-    }
-
     const timeout = Number(taskTimeout);
     const retries = Number(taskRetries);
 
@@ -384,7 +378,6 @@ export default function DashboardOverview() {
 
     try {
       const response = await createTask({
-        queue_id: taskQueueId,
         name,
         description: taskDescription.trim() || null,
         timeout_seconds: timeout,
@@ -401,7 +394,6 @@ export default function DashboardOverview() {
 
       setTaskName("");
       setTaskDescription("");
-      setTaskQueueId("");
       setTaskTimeout("30");
       setTaskRetries("2");
       setCreateTaskOpen(false);
@@ -933,36 +925,6 @@ export default function DashboardOverview() {
                     />
                   </div>
 
-                  <div className="space-y-2">
-                    <label htmlFor="task-queue" className="text-sm font-medium">
-                      Queue <span className="text-destructive">*</span>
-                    </label>
-                    <select
-                      id="task-queue"
-                      required
-                      value={taskQueueId}
-                      onChange={(event) => setTaskQueueId(event.target.value)}
-                      className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <option value="">Select a queue</option>
-                      {data.queues
-                        .filter((queue) => queue.is_active)
-                        .map((queue) => (
-                          <option key={queue.id} value={queue.id}>
-                            {queue.name}
-                          </option>
-                        ))}
-                    </select>
-
-                    {data.queues.filter((queue) => queue.is_active).length ===
-                      0 && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400">
-                        No active queues are available. Create or activate a
-                        queue before creating a task.
-                      </p>
-                    )}
-                  </div>
-
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <label
@@ -1025,9 +987,7 @@ export default function DashboardOverview() {
                     <Button
                       type="submit"
                       disabled={
-                        creatingTask ||
-                        data.queues.filter((queue) => queue.is_active)
-                          .length === 0
+                        creatingTask
                       }
                       className="gap-2"
                     >

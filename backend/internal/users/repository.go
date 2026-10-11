@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,44 +24,51 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
-func (r *Repository) Create(
-	ctx context.Context,
-	user *User,
-) error {
-	query := `
-		INSERT INTO users (
-			id,
-			full_name,
-			email,
-			password_hash,
-			email_verified,
-			is_active,
-			created_at,
-			updated_at
-		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-	`
+func (r *Repository) Create(ctx context.Context, user *User) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin user creation transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
 
-	_, err := r.db.Exec(
-		ctx,
-		query,
+	_, err = tx.Exec(ctx, `
+		INSERT INTO users (
+			id, full_name, email, password_hash, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`,
 		user.ID,
 		user.FullName,
 		user.Email,
 		user.PasswordHash,
-		user.EmailVerified,
-		user.IsActive,
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
-
 	if err != nil {
-		var pgErr *pgconn.PgError
-
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return ErrEmailExists
-		}
 		return fmt.Errorf("failed to create user: %w", err)
+	}
+
+	result, err := tx.Exec(ctx, `
+		INSERT INTO user_settings (
+			id, user_id, timezone, default_queue_id,
+			created_at, updated_at
+		)
+		SELECT
+			gen_random_uuid(), $1, 'UTC', q.id, NOW(), NOW()
+		FROM queues q
+		WHERE q.name = 'default'
+			AND q.is_active = TRUE
+	`, user.ID)
+	if err != nil {
+		return fmt.Errorf("failed to create user settings: %w", err)
+	}
+
+	if result.RowsAffected() != 1 {
+		return errors.New("cannot create user settings: active default queue not found")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit user creation: %w", err)
 	}
 
 	return nil

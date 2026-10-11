@@ -83,7 +83,6 @@ export default function TasksPage() {
 
   const [taskName, setTaskName] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
-  const [taskQueueId, setTaskQueueId] = useState("");
   const [taskTimeout, setTaskTimeout] = useState("30");
   const [taskRetries, setTaskRetries] = useState("2");
 
@@ -209,11 +208,6 @@ export default function TasksPage() {
       return;
     }
 
-    if (!taskQueueId) {
-      setCreateTaskError("Please select a queue.");
-      return;
-    }
-
     const timeout = Number(taskTimeout);
     const retries = Number(taskRetries);
 
@@ -231,7 +225,6 @@ export default function TasksPage() {
 
     try {
       const response = await createTask({
-        queue_id: taskQueueId,
         name,
         description: taskDescription.trim() || null,
         timeout_seconds: timeout,
@@ -245,7 +238,6 @@ export default function TasksPage() {
 
       setTaskName("");
       setTaskDescription("");
-      setTaskQueueId("");
       setTaskTimeout("30");
       setTaskRetries("2");
       setCreateTaskOpen(false);
@@ -263,7 +255,7 @@ export default function TasksPage() {
     }
   }
 
-  const activeQueues = queues.filter((queue) => queue.is_active);
+
   const activeCount = tasks.filter((task) => task.status === "Active").length;
   const pausedCount = tasks.filter((task) => task.status === "Paused").length;
   const archivedCount = tasks.filter(
@@ -654,33 +646,6 @@ export default function TasksPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <label htmlFor="task-queue" className="text-sm font-medium">
-                  Queue <span className="text-destructive">*</span>
-                </label>
-                <select
-                  id="task-queue"
-                  required
-                  value={taskQueueId}
-                  onChange={(event) => setTaskQueueId(event.target.value)}
-                  className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <option value="">Select a queue</option>
-                  {activeQueues.map((queue) => (
-                    <option key={queue.id} value={queue.id}>
-                      {queue.name}
-                    </option>
-                  ))}
-                </select>
-
-                {activeQueues.length === 0 && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    No active queues are available. Create or activate a queue
-                    before creating a task.
-                  </p>
-                )}
-              </div>
-
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label htmlFor="task-timeout" className="text-sm font-medium">
@@ -736,7 +701,7 @@ export default function TasksPage() {
 
                 <Button
                   type="submit"
-                  disabled={creatingTask || activeQueues.length === 0}
+                  disabled={creatingTask}
                   className="gap-2"
                 >
                   <Plus className="size-4" />

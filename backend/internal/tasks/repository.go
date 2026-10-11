@@ -292,3 +292,28 @@ func (r *Repository) Archive(
 
 	return nil
 }
+
+func (r *Repository) FindDefaultQueueIDForUser(
+	ctx context.Context,
+	userID string,
+) (string, error) {
+	var queueID string
+
+	err := r.db.QueryRow(ctx, `
+		SELECT q.id
+		FROM user_settings us
+		JOIN queues q ON q.id = us.default_queue_id
+		WHERE us.user_id = $1
+			AND q.name = 'default'
+			AND q.is_active = TRUE
+	`, userID).Scan(&queueID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", errors.New("active default queue not found for user")
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to find user's default queue: %w", err)
+	}
+
+	return queueID, nil
+}
