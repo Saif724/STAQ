@@ -11,9 +11,9 @@ info:
     Routes are registered at the root path (there is no /api/v1 prefix).
     Queue routes require bearer authentication. Successful JSON responses
     use a data wrapper and errors use an error object; see the schemas below.
-    Creating a task requires an explicit active queue_id; no default queue is
-    selected. Execution collection/list and connection list/disconnect routes
-    are not currently exposed.
+    Creating a task assigns the user's active default queue. Execution
+    collection/list and connection list/disconnect routes are not currently
+    exposed.
   version: 1.0.0
   license:
     name: MIT
@@ -604,7 +604,6 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateTaskRequest'
             example:
-              queue_id: 7f7d7a31-5d5c-4f10-8f2c-7c3a3d8f5b12
               name: Daily report
               description: Generate and send daily report
               timeout_seconds: 30
@@ -2033,16 +2032,12 @@ components:
 
     CreateTaskRequest:
       type: object
-      description: queue_id is required; the API does not select a default queue.
+      description: The user's active default queue is assigned automatically.
       required:
-        - queue_id
         - name
         - timeout_seconds
         - max_retries
       properties:
-        queue_id:
-          type: string
-          format: uuid
         name:
           type: string
         description:

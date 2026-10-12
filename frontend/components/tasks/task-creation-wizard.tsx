@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { AlertCircle, ArrowLeft, ArrowRight, Plus, Trash2, Workflow, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,9 @@ type ActionDraft = {
 };
 
 const steps = ["Task details", "Schedule", "Actions", "Review"] as const;
+const subscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 const inputClass =
   "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -63,16 +66,118 @@ function newAction(): ActionDraft {
   };
 }
 
-function localDateAfterOneHour() {
-  const date = new Date(Date.now() + 60 * 60 * 1000);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
+function getBrowserTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
-function localTimeAfterOneHour() {
-  const date = new Date(Date.now() + 60 * 60 * 1000);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(11, 16);
+function dateTimePartsInTimezone(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((parts, part) => {
+      if (part.type !== "literal") parts[part.type] = part.value;
+      return parts;
+    }, {});
+}
+
+function dateTimeAfterOneHour(timeZone: string, timestamp: number) {
+  const parts = dateTimePartsInTimezone(
+    new Date(timestamp),
+    timeZone,
+  );
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+  };
+}
+
+function localDateTimeInTimezone(
+  date: string,
+  time: string,
+  timeZone: string,
+): Date | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!dateMatch || !timeMatch) return null;
+
+  const [, yearText, monthText, dayText] = dateMatch;
+  const [, hourText, minuteText] = timeMatch;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+
+  if (
+    month < 1 || month > 12 || day < 1 || day > 31 ||
+    hour > 23 || minute > 59
+  ) {
+    return null;
+  }
+
+  const requestedTime = new Date(0);
+  requestedTime.setUTCFullYear(year, month - 1, day);
+  requestedTime.setUTCHours(hour, minute, 0, 0);
+  if (
+    requestedTime.getUTCFullYear() !== year ||
+    requestedTime.getUTCMonth() !== month - 1 ||
+    requestedTime.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  const requestedTimestamp = requestedTime.getTime();
+  let candidateTimestamp = requestedTimestamp;
+
+  try {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const parts = dateTimePartsInTimezone(
+        new Date(candidateTimestamp),
+        timeZone,
+      );
+      const representedTime = new Date(0);
+      representedTime.setUTCFullYear(
+        Number(parts.year),
+        Number(parts.month) - 1,
+        Number(parts.day),
+      );
+      representedTime.setUTCHours(
+        Number(parts.hour),
+        Number(parts.minute),
+        0,
+        0,
+      );
+
+      const offset = representedTime.getTime() - candidateTimestamp;
+      const nextCandidate = requestedTimestamp - offset;
+      if (nextCandidate === candidateTimestamp) break;
+      candidateTimestamp = nextCandidate;
+    }
+
+    const result = new Date(candidateTimestamp);
+    const resultParts = dateTimePartsInTimezone(result, timeZone);
+    if (
+      resultParts.year !== yearText ||
+      resultParts.month !== monthText ||
+      resultParts.day !== dayText ||
+      resultParts.hour !== hourText ||
+      resultParts.minute !== minuteText
+    ) {
+      return null;
+    }
+
+    return result;
+  } catch {
+    return null;
+  }
 }
 
 function configurationFor(action: ActionDraft): Record<string, unknown> {
@@ -170,25 +275,41 @@ export default function TaskCreationWizard({
   onClose,
   onCreated,
 }: Props) {
+  const mounted = useSyncExternalStore(
+    subscribe,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
+  const browserTimezone = mounted ? getBrowserTimezone() : "UTC";
+  const [defaultStartTimestamp] = useState(
+    () => Date.now() + 60 * 60 * 1000,
+  );
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [queueId, setQueueId] = useState("");
   const [timeoutSeconds, setTimeoutSeconds] = useState("60");
   const [maxRetries, setMaxRetries] = useState("3");
 
   const [triggerType, setTriggerType] = useState<TriggerType>("ONCE");
-  const [startDate, setStartDate] = useState(localDateAfterOneHour);
-  const [startTime, setStartTime] = useState(localTimeAfterOneHour);
+  const [startDate, setStartDate] = useState("");
+  const [startTime, setStartTime] = useState("");
   const [cronExpression, setCronExpression] = useState("0 9 * * *");
-  const [timezone, setTimezone] = useState("Asia/Dhaka");
+  const [timezoneOverride, setTimezoneOverride] = useState<string | null>(null);
+  const timezone = timezoneOverride ?? browserTimezone;
 
   const [actions, setActions] = useState<ActionDraft[]>([newAction()]);
 
-  const activeQueues = queues.filter((queue) => queue.is_active);
+  const defaultQueue = queues.find(
+    (queue) => queue.name === "default" && queue.is_active,
+  );
+  const defaultSchedule = mounted
+    ? dateTimeAfterOneHour(browserTimezone, defaultStartTimestamp)
+    : { date: "", time: "" };
+  const scheduleDate = startDate || defaultSchedule.date;
+  const scheduleTime = startTime || defaultSchedule.time;
 
   function updateAction(id: string, patch: Partial<ActionDraft>) {
     setActions((current) =>
@@ -201,7 +322,7 @@ export default function TaskCreationWizard({
   function validateStep(index: number): string | null {
     if (index === 0) {
       if (!name.trim()) return "Enter a task name.";
-      if (!queueId) return "Choose an active queue.";
+      if (!defaultQueue) return "The active default queue is unavailable.";
 
       const timeout = Number(timeoutSeconds);
       const retries = Number(maxRetries);
@@ -219,11 +340,13 @@ export default function TaskCreationWizard({
         return "Choose a start date and time.";
       }
 
-      const startAt = new Date(`${startDate}T${startTime}:00+06:00`);
+      const startAt = localDateTimeInTimezone(
+        scheduleDate,
+        scheduleTime,
+        timezone.trim(),
+      );
 
-      if (Number.isNaN(startAt.getTime())) {
-        return "The selected start date or time is invalid.";
-      }
+      if (!startAt) return "Choose a valid time and IANA time zone.";
 
       if (triggerType === "ONCE" && startAt.getTime() <= Date.now()) {
         return "A one-time trigger must be scheduled in the future.";
@@ -280,6 +403,17 @@ export default function TaskCreationWizard({
     const createdActionIds: string[] = [];
 
     try {
+      const scheduledStart = localDateTimeInTimezone(
+        scheduleDate,
+        scheduleTime,
+        timezone.trim(),
+      );
+      if (!scheduledStart) {
+        throw new Error(
+          "The selected local time is not valid in this time zone.",
+        );
+      }
+
       const taskResponse = await createTask({
         name: name.trim(),
         description: description.trim() || null,
@@ -289,15 +423,11 @@ export default function TaskCreationWizard({
 
       createdTaskId = taskResponse.data.id;
 
-      const startAt = new Date(
-        `${startDate}T${startTime}:00+06:00`,
-      ).toISOString();
-
       const triggerResponse = await createTrigger({
         task_id: createdTaskId,
         trigger_type: triggerType,
         timezone: timezone.trim(),
-        start_at: startAt,
+        start_at: scheduledStart.toISOString(),
         ...(triggerType === "CRON"
           ? { cron_expression: cronExpression.trim() }
           : {}),
@@ -544,7 +674,7 @@ export default function TaskCreationWizard({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/50 p-3 backdrop-blur-sm sm:p-5"
+      className="fixed inset-0 z-60 flex items-center justify-center overflow-y-auto bg-black/50 p-3 backdrop-blur-sm sm:p-5"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !saving) onClose();
       }}
@@ -634,22 +764,24 @@ export default function TaskCreationWizard({
               </Field>
 
               <Field label="Execution queue">
-                <select
-                  required
-                  className={inputClass}
-                  value={queueId}
-                  onChange={(event) => setQueueId(event.target.value)}
+                <div
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-input bg-muted/40 px-3 text-sm font-medium text-foreground"
+                  aria-readonly="true"
                 >
-                  <option value="">Select an active queue</option>
-                  {activeQueues.map((queue) => (
-                    <option key={queue.id} value={queue.id}>
-                      {queue.name}
-                    </option>
-                  ))}
-                </select>
-                {activeQueues.length === 0 && (
+                  {defaultQueue ? (
+                    <>
+                      <span className="size-2 rounded-full bg-emerald-500" />
+                      <span>Default queue</span>
+                    </>
+                  ) : (
+                    <span className="text-destructive">
+                      Default queue unavailable
+                    </span>
+                  )}
+                </div>
+                {!defaultQueue && (
                   <span className="text-xs text-destructive">
-                    No active queues found. Create or activate a queue first.
+                    The backend requires its active default queue.
                   </span>
                 )}
               </Field>
@@ -718,7 +850,7 @@ export default function TaskCreationWizard({
                   <input
                     type="date"
                     className={inputClass}
-                    value={startDate}
+                    value={scheduleDate}
                     onChange={(event) => setStartDate(event.target.value)}
                   />
                 </Field>
@@ -727,7 +859,7 @@ export default function TaskCreationWizard({
                   <input
                     type="time"
                     className={inputClass}
-                    value={startTime}
+                    value={scheduleTime}
                     onChange={(event) => setStartTime(event.target.value)}
                   />
                 </Field>
@@ -737,15 +869,15 @@ export default function TaskCreationWizard({
                 <input
                   className={inputClass}
                   value={timezone}
-                  onChange={(event) => setTimezone(event.target.value)}
-                  placeholder="Asia/Dhaka"
+                  onChange={(event) => setTimezoneOverride(event.target.value)}
+                  placeholder="America/New_York"
                 />
               </Field>
 
               <p className="rounded-lg border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
-                The selected start date and time are interpreted as Bangladesh
-                local time (UTC+06:00). Recurring schedules use the chosen time
-                zone.
+                The selected date and time use this IANA time zone. Daylight
+                saving gaps are rejected. A recurring CRON trigger starts at its
+                next matching time after this date and time.
               </p>
             </>
           )}
@@ -836,10 +968,7 @@ export default function TaskCreationWizard({
               <ReviewRow label="Task" value={name || "Untitled task"} />
               <ReviewRow
                 label="Queue"
-                value={
-                  activeQueues.find((queue) => queue.id === queueId)?.name ??
-                  "No queue selected"
-                }
+                value={defaultQueue?.name ?? "Default queue unavailable"}
               />
               <ReviewRow
                 label="Timeout / retries"
@@ -847,7 +976,7 @@ export default function TaskCreationWizard({
               />
               <ReviewRow
                 label="Schedule"
-                value={`${triggerType} · ${startDate} ${startTime} · ${timezone}`}
+                value={`${triggerType} · ${scheduleDate} ${scheduleTime} · ${timezone}`}
               />
               {triggerType === "CRON" && (
                 <ReviewRow label="Cron" value={cronExpression} />
@@ -930,7 +1059,7 @@ export default function TaskCreationWizard({
             ) : (
               <Button
                 type="button"
-                disabled={saving || activeQueues.length === 0}
+                disabled={saving || !defaultQueue}
                 onClick={() => void submitWorkflow()}
               >
                 {saving ? "Creating workflow…" : "Create workflow"}
@@ -962,7 +1091,7 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-1 border-b border-border/60 pb-3 sm:flex-row sm:justify-between">
       <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="break-words text-sm font-medium sm:text-right">
+      <span className="wrap-break-word text-sm font-medium sm:text-right">
         {value}
       </span>
     </div>
