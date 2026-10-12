@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,6 +25,26 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) Create(
 	ctx context.Context,
+	trigger *Trigger,
+) error {
+	return r.create(ctx, r.db, trigger)
+}
+
+func (r *Repository) CreateWithTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	trigger *Trigger,
+) error {
+	return r.create(ctx, tx, trigger)
+}
+
+type triggerExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func (r *Repository) create(
+	ctx context.Context,
+	execer triggerExecer,
 	trigger *Trigger,
 ) error {
 	const query = `
@@ -46,7 +67,7 @@ func (r *Repository) Create(
 		)
 	`
 
-	_, err := r.db.Exec(
+	_, err := execer.Exec(
 		ctx,
 		query,
 		trigger.ID,
@@ -305,29 +326,32 @@ func (r *Repository) FindDueForUpdate(
 	ctx context.Context,
 	tx pgx.Tx,
 	now time.Time,
-) (*Trigger, error) {
+) (*Trigger, string, error) {
 	const query = `
 		SELECT
-			id,
-			task_id,
-			trigger_type,
-			cron_expression,
-			timezone,
-			start_at,
-			next_run_at,
-			last_run_at,
-			is_active,
-			created_at,
-			updated_at
+			triggers.id,
+			triggers.task_id,
+			triggers.trigger_type,
+			triggers.cron_expression,
+			triggers.timezone,
+			triggers.start_at,
+			triggers.next_run_at,
+			triggers.last_run_at,
+			triggers.is_active,
+			triggers.created_at,
+			triggers.updated_at,
+			tasks.status
 		FROM triggers
-		WHERE is_active = TRUE
-			AND next_run_at <= $1
-		ORDER BY next_run_at ASC
+		INNER JOIN tasks ON tasks.id = triggers.task_id
+		WHERE triggers.is_active = TRUE
+			AND triggers.next_run_at <= $1
+		ORDER BY triggers.next_run_at ASC
 		LIMIT 1
-		FOR UPDATE SKIP LOCKED
+		FOR UPDATE OF triggers SKIP LOCKED
 	`
 
 	trigger := &Trigger{}
+	var taskStatus string
 
 	err := tx.QueryRow(
 		ctx,
@@ -345,15 +369,16 @@ func (r *Repository) FindDueForUpdate(
 		&trigger.IsActive,
 		&trigger.CreatedAt,
 		&trigger.UpdatedAt,
+		&taskStatus,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrTriggerNotFound
+		return nil, "", ErrTriggerNotFound
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to find due trigger for update: %w", err)
+		return nil, "", fmt.Errorf("failed to find due trigger for update: %w", err)
 	}
 
-	return trigger, nil
+	return trigger, taskStatus, nil
 }

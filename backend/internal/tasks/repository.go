@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -23,6 +24,26 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) Create(
 	ctx context.Context,
+	task *Task,
+) error {
+	return r.create(ctx, r.db, task)
+}
+
+func (r *Repository) CreateWithTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	task *Task,
+) error {
+	return r.create(ctx, tx, task)
+}
+
+type taskExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func (r *Repository) create(
+	ctx context.Context,
+	execer taskExecer,
 	task *Task,
 ) error {
 	query := `
@@ -44,7 +65,7 @@ func (r *Repository) Create(
 		)
 	`
 
-	_, err := r.db.Exec(
+	_, err := execer.Exec(
 		ctx,
 		query,
 		task.ID,

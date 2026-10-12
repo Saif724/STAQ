@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -25,6 +26,26 @@ func (r *Repository) Create(
 	ctx context.Context,
 	action *Action,
 ) error {
+	return r.create(ctx, r.db, action)
+}
+
+func (r *Repository) CreateWithTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	action *Action,
+) error {
+	return r.create(ctx, tx, action)
+}
+
+type actionExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func (r *Repository) create(
+	ctx context.Context,
+	execer actionExecer,
+	action *Action,
+) error {
 	const query = `
 		INSERT INTO  actions (
 			id,
@@ -39,7 +60,7 @@ func (r *Repository) Create(
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
-	_, err := r.db.Exec(
+	_, err := execer.Exec(
 		ctx,
 		query,
 		action.ID,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 type Service struct {
@@ -69,6 +70,20 @@ func (s *Service) Create(
 	ctx context.Context,
 	input CreateTaskInput,
 ) (*Task, error) {
+	task, err := s.PrepareCreate(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repository.Create(ctx, task); err != nil {
+		return nil, fmt.Errorf("failed to create task: %w", err)
+	}
+	return task, nil
+}
+
+func (s *Service) PrepareCreate(
+	ctx context.Context,
+	input CreateTaskInput,
+) (*Task, error) {
 	if strings.TrimSpace(input.UserID) == "" {
 		return nil, errors.New("user id is required")
 	}
@@ -114,11 +129,18 @@ func (s *Service) Create(
 		UpdatedAt:      now,
 	}
 
-	if err := s.repository.Create(ctx, task); err != nil {
-		return nil, fmt.Errorf("failed to create task: %w", err)
-	}
-
 	return task, nil
+}
+
+func (s *Service) CreateWithTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	task *Task,
+) error {
+	if task == nil {
+		return errors.New("task is required")
+	}
+	return s.repository.CreateWithTx(ctx, tx, task)
 }
 
 func (s *Service) GetByID(

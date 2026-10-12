@@ -5,12 +5,15 @@ import (
 
 	"github.com/Saif724/STAQ/backend/internal/actions"
 	"github.com/Saif724/STAQ/backend/internal/auth"
+	"github.com/Saif724/STAQ/backend/internal/connections"
+	"github.com/Saif724/STAQ/backend/internal/dashboard"
 	"github.com/Saif724/STAQ/backend/internal/executions"
 	"github.com/Saif724/STAQ/backend/internal/health"
 	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
+	"github.com/Saif724/STAQ/backend/internal/tasksetups"
 	"github.com/Saif724/STAQ/backend/internal/triggers"
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/jwt"
@@ -21,9 +24,12 @@ func New(
 	healthHandler *health.Handler,
 	authHandler *auth.Handler,
 	gmailHandler *emailIntegration.Handler,
+	connectionsHandler *connections.Handler,
 	jwtManager *jwt.Manager,
 	usersHandler *users.Handler,
+	dashboardHandler *dashboard.Handler,
 	taskHandler *tasks.Handler,
+	taskSetupHandler *tasksetups.Handler,
 	queueHandler *queues.Handler,
 	triggersHandler *triggers.Handler,
 	actionsHandler *actions.Handler,
@@ -47,6 +53,25 @@ func New(
 	mux.HandleFunc("POST /auth/google/exchange", authHandler.GoogleExchange)
 
 	mux.Handle(
+		"GET /connections",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(connectionsHandler.List),
+		),
+	)
+	mux.Handle(
+		"DELETE /connections/{id}",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(connectionsHandler.Delete),
+		),
+	)
+
+	mux.Handle(
+		"GET /connections/google/authorization",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(gmailHandler.GmailAuthorizationURL),
+		),
+	)
+	mux.Handle(
 		"GET /connections/google",
 		middleware.Auth(jwtManager)(
 			http.HandlerFunc(gmailHandler.BeginGmailAuthorization),
@@ -64,7 +89,26 @@ func New(
 			http.HandlerFunc(usersHandler.Me),
 		),
 	)
+	mux.Handle(
+		"PUT /users/me",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(usersHandler.UpdateMe),
+		),
+	)
 
+	mux.Handle(
+		"GET /dashboard/summary",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(dashboardHandler.Summary),
+		),
+	)
+
+	mux.Handle(
+		"POST /task-setups",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(taskSetupHandler.Create),
+		),
+	)
 	mux.Handle(
 		"POST /tasks",
 		middleware.Auth(jwtManager)(
@@ -189,6 +233,12 @@ func New(
 		),
 	)
 
+	mux.Handle(
+		"GET /executions",
+		middleware.Auth(jwtManager)(
+			http.HandlerFunc(executionHandler.List),
+		),
+	)
 	mux.Handle(
 		"GET /executions/{id}",
 		middleware.Auth(jwtManager)(

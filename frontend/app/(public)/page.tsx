@@ -2,9 +2,7 @@ import Link from "next/link";
 import {
   ArrowRight,
   Check,
-  CheckCircle2,
   Clock3,
-  Code2,
   GitBranch,
   Mail,
   Play,
@@ -66,21 +64,6 @@ const actions = [
   },
 ];
 
-const executions = [
-  {
-    name: "Daily API sync",
-    time: "2 minutes ago",
-  },
-  {
-    name: "Weekly report",
-    time: "18 minutes ago",
-  },
-  {
-    name: "Email reminder",
-    time: "42 minutes ago",
-  },
-];
-
 export default function HomePage() {
   return (
     <main className="min-h-screen overflow-hidden bg-background text-foreground">
@@ -89,7 +72,7 @@ export default function HomePage() {
       {/* Hero */}
       <section className="relative isolate">
         <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute left-1/2 top-0 h-[600px] w-[900px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl animate-staq-pulse" />
+          <div className="absolute left-1/2 top-0 h-150 w-225 -translate-x-1/2 rounded-full bg-primary/10 blur-3xl animate-staq-pulse" />
 
           <div
             className="absolute inset-0 opacity-[0.035]"
@@ -166,13 +149,13 @@ export default function HomePage() {
                   <span className="size-2.5 rounded-full bg-muted-foreground/25" />
 
                   <div className="mx-auto hidden max-w-sm flex-1 rounded-md border border-border bg-background/70 px-3 py-1 text-center text-[10px] text-muted-foreground sm:block">
-                    app.staq.dev/dashboard
+                    Interface preview
                   </div>
 
                   <div className="w-16" />
                 </div>
 
-                <div className="grid min-h-[420px] grid-cols-1 md:grid-cols-[190px_1fr]">
+                <div className="grid min-h-105 grid-cols-1 md:grid-cols-[190px_1fr]">
                   {/* Sidebar */}
                   <aside className="hidden border-r border-border bg-muted/10 p-5 md:block">
                     <div className="mb-8 flex items-center gap-2 text-sm font-semibold">
@@ -215,18 +198,13 @@ export default function HomePage() {
                         </h2>
                       </div>
 
-                      <div className="hidden items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium sm:flex">
-                        <span className="size-2 rounded-full bg-emerald-500" />
-                        All systems operational
+                      <div className="hidden items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground sm:flex">
+                        Workspace overview
                       </div>
                     </div>
 
                     <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                      {[
-                        ["12", "Active tasks"],
-                        ["248", "Executions"],
-                        ["98.4%", "Success rate"],
-                      ].map(([value, label]) => (
+                      {["Tasks", "Recent runs", "Success rate"].map((label) => (
                         <div
                           key={label}
                           className="rounded-xl border border-border bg-background p-4"
@@ -235,8 +213,8 @@ export default function HomePage() {
                             {label}
                           </p>
 
-                          <p className="mt-2 text-2xl font-semibold tracking-tight">
-                            {value}
+                          <p className="mt-2 text-2xl font-semibold tracking-tight text-muted-foreground">
+                            —
                           </p>
                         </div>
                       ))}
@@ -253,32 +231,13 @@ export default function HomePage() {
                         </span>
                       </div>
 
-                      {executions.map((execution) => (
-                        <div
-                          key={execution.name}
-                          className="flex items-center justify-between border-b border-border px-4 py-3 last:border-0"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex size-7 items-center justify-center rounded-full bg-emerald-500/10">
-                              <CheckCircle2 className="size-3.5 text-emerald-500" />
-                            </div>
-
-                            <div>
-                              <p className="text-xs font-medium">
-                                {execution.name}
-                              </p>
-
-                              <p className="text-[10px] text-muted-foreground">
-                                {execution.time}
-                              </p>
-                            </div>
-                          </div>
-
-                          <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                            Completed
-                          </span>
-                        </div>
-                      ))}
+                      <div className="px-4 py-9 text-center">
+                        <Clock3 className="mx-auto size-5 text-muted-foreground" />
+                        <p className="mt-3 text-xs font-medium">Execution history</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Your real task runs and outcomes appear here after sign in.
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>

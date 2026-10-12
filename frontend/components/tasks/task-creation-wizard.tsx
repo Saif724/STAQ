@@ -1,19 +1,15 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
 import { AlertCircle, ArrowLeft, ArrowRight, Plus, Trash2, Workflow, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { Queue } from "@/lib/api/dashboard";
 import {
-  createTask,
-  type Queue,
-} from "@/lib/api/dashboard";
-import {
-  createAction,
-  createTrigger,
   type ActionType,
   type TriggerType,
 } from "@/lib/api/automation";
+import { createTaskSetup } from "@/lib/api/task-setups";
 
 type Props = {
   queues: Queue[];
@@ -68,6 +64,171 @@ function newAction(): ActionDraft {
 
 function getBrowserTimezone() {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+function getTimezoneOptions(preferredTimezone: string) {
+  const supportedTimezones =
+    typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : [
+          "Africa/Cairo",
+          "America/Chicago",
+          "America/Denver",
+          "America/Los_Angeles",
+          "America/New_York",
+          "Asia/Dhaka",
+          "Asia/Dubai",
+          "Asia/Kolkata",
+          "Asia/Singapore",
+          "Asia/Tokyo",
+          "Australia/Sydney",
+          "Europe/Berlin",
+          "Europe/London",
+          "Pacific/Auckland",
+        ];
+
+  return Array.from(
+    new Set(["UTC", preferredTimezone, ...supportedTimezones]),
+  ).sort((first, second) => first.localeCompare(second));
+}
+
+function formatTimezoneOffset(timeZone: string, date: Date) {
+  try {
+    const offset = new Intl.DateTimeFormat("en", {
+      timeZone,
+      timeZoneName: "shortOffset",
+    })
+      .formatToParts(date)
+      .find((part) => part.type === "timeZoneName")?.value;
+
+    if (!offset || offset === "GMT") return "UTC+00:00";
+
+    const match = /^GMT([+-])(\d{1,2})(?::(\d{2}))?$/.exec(offset);
+    if (!match) return offset;
+
+    const [, sign, hours, minutes = "00"] = match;
+    return `UTC${sign}${hours.padStart(2, "0")}:${minutes}`;
+  } catch {
+    return "UTC offset unavailable";
+  }
+}
+
+function TimezonePicker({
+  value,
+  timezones,
+  referenceDate,
+  onChange,
+}: {
+  value: string;
+  timezones: string[];
+  referenceDate: Date;
+  onChange: (timeZone: string) => void;
+}) {
+  const listboxId = useId();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const normalizedQuery = query.trim().toLowerCase();
+
+  const filteredTimezones = normalizedQuery
+    ? timezones
+        .filter((timeZone) => {
+          const searchText = `${timeZone} ${timeZone
+            .split("/")
+            .at(-1)
+            ?.replaceAll("_", " ")}`.toLowerCase();
+          return searchText.includes(normalizedQuery);
+        })
+        .slice(0, 80)
+    : [];
+
+  function choose(timeZone: string) {
+    onChange(timeZone);
+    setQuery("");
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative">
+      <input
+        role="combobox"
+        aria-label="Search time zones by city or region"
+        aria-autocomplete="list"
+        aria-expanded={open}
+        aria-controls={listboxId}
+        autoComplete="off"
+        className={inputClass}
+        value={open ? query : `${formatTimezoneOffset(value, referenceDate)} · ${value}`}
+        placeholder="Search city or time zone"
+        onFocus={() => {
+          setQuery("");
+          setActiveIndex(0);
+          setOpen(true);
+        }}
+        onBlur={() => setOpen(false)}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setActiveIndex(0);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+            setActiveIndex((index) =>
+              Math.min(index + 1, filteredTimezones.length - 1),
+            );
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActiveIndex((index) => Math.max(index - 1, 0));
+          } else if (event.key === "Enter" && open && filteredTimezones[activeIndex]) {
+            event.preventDefault();
+            choose(filteredTimezones[activeIndex]);
+          } else if (event.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+      />
+
+      {open && (
+        <div
+          id={listboxId}
+          role="listbox"
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-lg"
+        >
+          {filteredTimezones.length > 0 ? (
+            filteredTimezones.map((timeZone, index) => (
+              <button
+                key={timeZone}
+                type="button"
+                role="option"
+                aria-selected={timeZone === value}
+                className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm ${
+                  index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+                }`}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => choose(timeZone)}
+              >
+                <span className="truncate">{timeZone}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {formatTimezoneOffset(timeZone, referenceDate)}
+                </span>
+              </button>
+            ))
+          ) : normalizedQuery ? (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              No matching time zones.
+            </p>
+          ) : (
+            <p className="px-3 py-2 text-sm text-muted-foreground">
+              Type a city or region to search time zones.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function dateTimePartsInTimezone(date: Date, timeZone: string) {
@@ -281,6 +442,7 @@ export default function TaskCreationWizard({
     getServerSnapshot,
   );
   const browserTimezone = mounted ? getBrowserTimezone() : "UTC";
+  const timezoneOptions = mounted ? getTimezoneOptions(browserTimezone) : ["UTC"];
   const [defaultStartTimestamp] = useState(
     () => Date.now() + 60 * 60 * 1000,
   );
@@ -310,6 +472,9 @@ export default function TaskCreationWizard({
     : { date: "", time: "" };
   const scheduleDate = startDate || defaultSchedule.date;
   const scheduleTime = startTime || defaultSchedule.time;
+  const timezoneReferenceDate =
+    localDateTimeInTimezone(scheduleDate, scheduleTime, timezone) ??
+    new Date(defaultStartTimestamp);
 
   function updateAction(id: string, patch: Partial<ActionDraft>) {
     setActions((current) =>
@@ -336,7 +501,7 @@ export default function TaskCreationWizard({
     }
 
     if (index === 1) {
-      if (!startDate || !startTime) {
+      if (!scheduleDate || !scheduleTime) {
         return "Choose a start date and time.";
       }
 
@@ -398,10 +563,6 @@ export default function TaskCreationWizard({
 
     setSaving(true);
 
-    let createdTaskId: string | undefined;
-    let createdTriggerId: string | undefined;
-    const createdActionIds: string[] = [];
-
     try {
       const scheduledStart = localDateTimeInTimezone(
         scheduleDate,
@@ -414,40 +575,24 @@ export default function TaskCreationWizard({
         );
       }
 
-      const taskResponse = await createTask({
+      await createTaskSetup({
         name: name.trim(),
         description: description.trim() || null,
         timeout_seconds: Number(timeoutSeconds),
         max_retries: Number(maxRetries),
-      });
-
-      createdTaskId = taskResponse.data.id;
-
-      const triggerResponse = await createTrigger({
-        task_id: createdTaskId,
         trigger_type: triggerType,
         timezone: timezone.trim(),
         start_at: scheduledStart.toISOString(),
         ...(triggerType === "CRON"
           ? { cron_expression: cronExpression.trim() }
           : {}),
-      });
-
-      createdTriggerId = triggerResponse.data.id;
-
-      for (let index = 0; index < actions.length; index += 1) {
-        const draft = actions[index];
-
-        const actionResponse = await createAction({
-          task_id: createdTaskId,
+        actions: actions.map((draft, index) => ({
           action_type: draft.type,
           execution_order: index + 1,
           configuration: configurationFor(draft),
           continue_on_failure: draft.continueOnFailure,
-        });
-
-        createdActionIds.push(actionResponse.data.id);
-      }
+        })),
+      });
 
       onCreated();
     } catch (caught) {
@@ -456,45 +601,7 @@ export default function TaskCreationWizard({
           ? caught.message
           : "The workflow could not be created.";
 
-      if (createdTaskId) {
-        const cleanupProblems: string[] = [];
-
-        // Best-effort cleanup prevents leaving a partially configured task.
-        for (const actionId of createdActionIds.reverse()) {
-          try {
-            const { deleteAction } = await import("@/lib/api/automation");
-            await deleteAction(actionId);
-          } catch {
-            cleanupProblems.push("an action");
-          }
-        }
-
-        if (createdTriggerId) {
-          try {
-            const { deleteTrigger } = await import("@/lib/api/automation");
-            await deleteTrigger(createdTriggerId);
-          } catch {
-            cleanupProblems.push("the trigger");
-          }
-        }
-
-        try {
-          const { deleteTask } = await import("@/lib/api/dashboard");
-          await deleteTask(createdTaskId);
-        } catch {
-          cleanupProblems.push("the task");
-        }
-
-        setError(
-          cleanupProblems.length
-            ? `Setup failed: ${message} Cleanup also failed for ${[
-                ...new Set(cleanupProblems),
-              ].join(", ")}. Refresh the task list and inspect the created task.`
-            : `Setup failed: ${message} The incomplete task setup was cleaned up. Please review your inputs and try again.`,
-        );
-      } else {
-        setError(message);
-      }
+      setError(message);
     } finally {
       setSaving(false);
     }
@@ -866,11 +973,11 @@ export default function TaskCreationWizard({
               </div>
 
               <Field label="Time zone">
-                <input
-                  className={inputClass}
+                <TimezonePicker
                   value={timezone}
-                  onChange={(event) => setTimezoneOverride(event.target.value)}
-                  placeholder="America/New_York"
+                  timezones={timezoneOptions}
+                  referenceDate={timezoneReferenceDate}
+                  onChange={setTimezoneOverride}
                 />
               </Field>
 

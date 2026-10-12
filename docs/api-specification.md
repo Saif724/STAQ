@@ -28,13 +28,19 @@ Most JSON success responses wrap a value as `{"data": ...}`. Error responses are
 | POST | `/auth/resend-verification` | No | Resend verification email |
 | GET | `/auth/google` | No | Redirect to Google sign-in |
 | GET | `/auth/google/callback` | No | Complete Google sign-in |
-| GET | `/users/me` | Bearer | Current user's basic profile |
+| GET | `/users/me` | Bearer | Current user's profile and saved timezone |
+| PUT | `/users/me` | Bearer | Update full name and saved IANA timezone preference |
+| GET | `/dashboard/summary` | Bearer | User-scoped execution metrics, recent executions/failures, and upcoming runs |
+| GET | `/connections` | Bearer | List current user's connection metadata without credentials |
+| DELETE | `/connections/{id}` | Bearer | Disconnect an owned external account |
+| GET | `/connections/google/authorization` | Bearer | Return a Google authorization URL for browser navigation |
 | GET | `/connections/google` | Bearer | Begin Gmail authorization; redirects to Google |
 | GET | `/connections/google/callback` | OAuth state | Complete Gmail connection |
 | POST | `/tasks` | Bearer | Create task |
+| POST | `/task-setups` | Bearer | Atomically create a task, one trigger, and ordered actions |
 | GET | `/tasks` | Bearer | List current user's tasks |
 | GET | `/tasks/{id}` | Bearer | Fetch owned task |
-| PUT | `/tasks/{id}` | Bearer | Replace task fields |
+| PUT | `/tasks/{id}` | Bearer | Update task name, description, status, timeout, and retries; queue assignment is preserved |
 | DELETE | `/tasks/{id}` | Bearer | Archive task (not physical delete) |
 | GET | `/queues` | Bearer | List queues |
 | GET | `/queues/{id}` | Bearer | Fetch queue |
@@ -51,10 +57,11 @@ Most JSON success responses wrap a value as `{"data": ...}`. Error responses are
 | GET | `/actions/{id}` | Bearer | Fetch action for an owned task |
 | PUT | `/actions/{id}` | Bearer | Update action |
 | DELETE | `/actions/{id}` | Bearer | Delete action; returns no content |
+| GET | `/executions` | Bearer | List owned executions with optional task/status filters and pagination |
 | GET | `/executions/{id}` | Bearer | Fetch execution for a task owned by caller |
 | GET | `/executions/{id}/logs` | Bearer | Fetch logs for an execution owned by caller |
 
-There is no task search/filter/pagination route, no execution-list route, and no route to manage user settings.
+There is no task search/filter/pagination route. Task creation assigns the authenticated user's active default queue; clients cannot select a queue.
 
 ## Health
 
@@ -90,15 +97,15 @@ Both accept `{"refresh_token":"..."}` at `POST /auth/refresh` and `POST /auth/lo
 
 ### Google sign-in
 
-`GET /auth/google` sets an OAuth state cookie and redirects to Google. Google returns to `GET /auth/google/callback`; the callback validates the cookie and Redis state before completing sign-in. Configure the Google redirect URL to this callback. The callback is a browser redirect flow, not an email/password JSON login request.
+`GET /auth/google` sets an OAuth state cookie and redirects to Google. Google returns to `GET /auth/google/callback`; the callback validates the cookie and Redis state before completing sign-in, then redirects to the configured frontend with a one-time login code. Errors also redirect using fixed error codes. Configure Google's redirect URL to the backend callback. This is a browser redirect flow, not an email/password JSON login request.
 
 ## User profile
 
-`GET /users/me` requires bearer auth and returns `data` with `id`, `full_name`, `email`, and `email_verified`.
+`GET /users/me` requires bearer auth and returns `data` with `id`, `full_name`, `email`, `email_verified`, and the saved IANA `timezone`. `PUT /users/me` accepts `{"full_name":"Ada Lovelace","timezone":"Asia/Dhaka"}`; full name must be 2–100 characters and timezone must be a valid IANA name. Email and password are not editable through this endpoint.
 
 ## Gmail connection
 
-`GET /connections/google` requires bearer auth and redirects to Google. The callback `GET /connections/google/callback` receives OAuth `state` and `code`; it uses the stored state to associate the resulting Google account with the initiating user. Tokens are encrypted before persistence. The API does not expose a connection-list or disconnect route.
+`GET /connections/google/authorization` requires bearer auth and returns `data.authorization_url`; the browser then navigates to that URL. `GET /connections/google` is also available for server-side redirect clients. The callback `GET /connections/google/callback` receives OAuth `state` and `code`; it uses the stored state to associate the resulting Google account with the initiating user. It redirects only to the configured frontend's fixed `/dashboard/connections` path with a fixed result code; it does not include OAuth codes, tokens, account email, or internal error details. Tokens are encrypted before persistence. `GET /connections` returns caller-owned metadata only (ID, provider, account email, scopes, expiry, and timestamps). `DELETE /connections/{id}` deletes only a connection owned by the caller and returns `204`.
 
 ## Queues
 
@@ -110,7 +117,6 @@ Create body:
 
 ```json
 {
-  "queue_id":"<queue-uuid>",
   "name":"Daily check",
   "description":"Optional",
   "timeout_seconds":300,
@@ -118,13 +124,14 @@ Create body:
 }
 ```
 
-The authenticated user ID is taken from the JWT, not the body. `queue_id` is required; the backend has no default-queue lookup. The supplied queue must exist and be active. A non-empty name (maximum 150 characters) is required. Non-positive create timeout defaults to 300; max retries cannot be negative. New tasks start as `Active`.
+The authenticated user ID is taken from the JWT, not the body. The backend assigns the user's active default queue; clients do not supply a queue ID. A non-empty name (maximum 150 characters) is required. Non-positive create timeout defaults to 300; max retries cannot be negative. New tasks start as `Active`.
 
-Update body requires `queue_id`, `name`, `status`, `timeout_seconds`, and `max_retries` (description may be null):
+For the complete automation wizard, prefer `POST /task-setups`. It accepts the task fields, trigger fields (`trigger_type`, optional `cron_expression`, `timezone`, `start_at`), and an `actions` array containing each action's type, order, JSON configuration, and continue-on-failure flag. User and queue assignment are derived by the backend. It validates the full setup before writing and creates the task, trigger, and up to 50 actions in one database transaction; a failed write rolls back the complete setup. Success is `201` with `data.task`, `data.trigger`, and `data.actions`.
+
+Update body requires `name`, `status`, `timeout_seconds`, and `max_retries` (description may be null). Queue assignment is preserved and is not accepted in the update body:
 
 ```json
 {
-  "queue_id":"<queue-uuid>",
   "name":"Daily check",
   "description":null,
   "status":"Paused",
@@ -134,6 +141,8 @@ Update body requires `queue_id`, `name`, `status`, `timeout_seconds`, and `max_r
 ```
 
 Allowed status strings are exactly `Active`, `Paused`, and `Archived`. `DELETE /tasks/{id}` archives the task and returns `204`. List returns all tasks belonging to the caller; it accepts no paging/filter parameters.
+
+Pausing a task prevents the scheduler from publishing occurrences while the task is paused. Due recurring occurrences are advanced without dispatch, rather than replayed on resume; a due one-time trigger is deactivated without dispatch. The worker checks current task status before starting a queued job, so jobs already in Redis are skipped if the task is still paused or archived when the worker checks it.
 
 Task success bodies use `data` containing the task object (list uses an array). Fields include `id`, `user_id`, `queue_id`, `name`, `description`, `status`, `timeout_seconds`, `max_retries`, `created_at`, and `updated_at`.
 
@@ -152,6 +161,8 @@ Create body:
 ```
 
 `start_at` and a valid IANA timezone are required. Types are `ONCE`, `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`, and `CRON`; cron uses standard five-field syntax and is required only for `CRON`. A one-time start must be in the future. Update accepts `trigger_type`, `cron_expression`, `timezone`, `start_at`, and `is_active`. Create/get/update/list return trigger data; delete returns `204`.
+
+The scheduler polls every 30 seconds. A recurring occurrence more than two minutes overdue is skipped and rescheduled to its next occurrence. Paused-task occurrences are also skipped and advanced, regardless of lateness.
 
 ## Actions
 
@@ -180,7 +191,13 @@ Configuration shapes accepted by the current executors:
 
 ## Executions
 
-`GET /executions/{id}` returns one execution in `data`, including task/trigger IDs, scheduled/start/completion times, status, heartbeat, duration, retry count, and optional error. `GET /executions/{id}/logs` returns log entries with `INFO`, `WARNING`, or `ERROR` level. Both enforce task ownership. There is no endpoint to enumerate a user's executions.
+`GET /executions` returns `data` with `items`, `total`, `page`, and `page_size`. Optional query parameters are `task_id` and `status`; status is one of `PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, `CANCELLED`, or `TIMED_OUT`. `page` defaults to `1`; `page_size` defaults to `20` and must be between `1` and `100`. Results are ordered by `created_at DESC, id DESC`. Both items and total count are scoped to the authenticated user and the selected filters.
+
+`GET /executions/{id}` returns one execution in `data`, including task/trigger IDs, scheduled/start/completion times, status, heartbeat, duration, retry count, and optional error. `GET /executions/{id}/logs` returns log entries with `INFO`, `WARNING`, or `ERROR` level. All three endpoints enforce task ownership.
+
+## Dashboard summary
+
+`GET /dashboard/summary` returns counts over the rolling 30 days beginning at `window_starts_at`. `success_rate` is `successful_count / (successful_count + failed_count + timed_out_count) * 100`; pending, running, and cancelled executions are excluded from this denominator. A zero denominator returns `0`. `recent_executions` and `recent_failures` contain up to five latest rows across all time, ordered by `created_at DESC, id DESC`; failures include `FAILED` and `TIMED_OUT`. `upcoming_executions` contains up to five future active triggers whose tasks are currently `Active`, ordered by next run time. The response is read from one repeatable-read database snapshot and contains only the authenticated user's data.
 
 ## Error format
 

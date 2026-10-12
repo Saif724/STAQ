@@ -18,6 +18,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/broker"
 	"github.com/Saif724/STAQ/backend/internal/config"
 	"github.com/Saif724/STAQ/backend/internal/connections"
+	"github.com/Saif724/STAQ/backend/internal/dashboard"
 	"github.com/Saif724/STAQ/backend/internal/database"
 	"github.com/Saif724/STAQ/backend/internal/executions"
 	"github.com/Saif724/STAQ/backend/internal/health"
@@ -26,6 +27,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/router"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
+	"github.com/Saif724/STAQ/backend/internal/tasksetups"
 	"github.com/Saif724/STAQ/backend/internal/triggers"
 	"github.com/Saif724/STAQ/backend/internal/users"
 	"github.com/Saif724/STAQ/backend/pkg/email"
@@ -130,15 +132,20 @@ func main() {
 
 	connectionsRepository := connections.NewRepository(db)
 	connectionsService := connections.NewService(connectionsRepository)
+	connectionsHandler := connections.NewHandler(connectionsService)
 
 	gmailIntegrationService := emailIntegration.NewService(
 		gmailOAuthService,
 		connectionsService,
 		encryptor,
 	)
-	gmailHandler := emailIntegration.NewHandler(gmailIntegrationService)
+	gmailHandler := emailIntegration.NewHandler(
+		gmailIntegrationService,
+		cfg.App.FrontendURL,
+	)
 
 	usersHandler := users.NewHandler(usersService)
+	dashboardHandler := dashboard.NewHandler(dashboard.NewService(db))
 
 	queuesRepository := queues.NewRepository(db)
 	queuesService := queues.NewService(queuesRepository)
@@ -155,6 +162,12 @@ func main() {
 	actionsRepository := actions.NewRepository(db)
 	actionsService := actions.NewService(actionsRepository, tasksService)
 	actionsHandler := actions.NewHandler(actionsService)
+	taskSetupHandler := tasksetups.NewHandler(tasksetups.NewService(
+		db,
+		tasksService,
+		triggersService,
+		actionsService,
+	))
 
 	executionsRepository := executions.NewRepository(db)
 	executionsService := executions.NewService(executionsRepository)
@@ -195,9 +208,12 @@ func main() {
 		healthHandler,
 		authHandler,
 		gmailHandler,
+		connectionsHandler,
 		jwtManager,
 		usersHandler,
+		dashboardHandler,
 		tasksHandler,
+		taskSetupHandler,
 		queuesHandler,
 		triggersHandler,
 		actionsHandler,

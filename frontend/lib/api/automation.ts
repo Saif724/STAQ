@@ -96,6 +96,13 @@ export type Execution = {
   created_at: string;
 };
 
+export type ExecutionPage = {
+  items: Execution[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
 export type ExecutionLog = {
   id: string;
   execution_id: string;
@@ -166,6 +173,24 @@ export function getExecution(executionId: string) {
   return apiRequest<ApiResponse<Execution>>(
     `/executions/${executionId}`,
   );
+}
+
+export type ExecutionFilters = {
+  taskId?: string;
+  status?: ExecutionStatus;
+  page?: number;
+  pageSize?: number;
+};
+
+export function getExecutions(filters: ExecutionFilters = {}) {
+  const params = new URLSearchParams();
+  if (filters.taskId) params.set("task_id", filters.taskId);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.pageSize) params.set("page_size", String(filters.pageSize));
+
+  const query = params.size ? `?${params.toString()}` : "";
+  return apiRequest<ApiResponse<ExecutionPage>>(`/executions${query}`);
 }
 
 export function getExecutionLogs(executionId: string) {

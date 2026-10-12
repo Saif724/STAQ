@@ -12,8 +12,10 @@ import (
 )
 
 var (
-	ErrExecutionNotFound     = errors.New("execution not found")
-	ErrExecutionAlreadyExist = errors.New("execution already exists")
+	ErrExecutionNotFound      = errors.New("execution not found")
+	ErrExecutionAlreadyExist  = errors.New("execution already exists")
+	ErrInvalidExecutionFilter = errors.New("invalid execution filter")
+	ErrInvalidPagination      = errors.New("invalid execution pagination")
 )
 
 type Repository struct {
@@ -251,6 +253,94 @@ func (r *Repository) FindByIDAndUser(
 	return &execution, nil
 }
 
+func (r *Repository) FindPageByUser(
+	ctx context.Context,
+	userID string,
+	taskID string,
+	status string,
+	limit int,
+	offset int64,
+) ([]Execution, int64, error) {
+	where := "WHERE t.user_id = $1"
+	args := []any{userID}
+
+	if taskID != "" {
+		args = append(args, taskID)
+		where += fmt.Sprintf(" AND e.task_id::text = $%d", len(args))
+	}
+	if status != "" {
+		args = append(args, status)
+		where += fmt.Sprintf(" AND e.status = $%d", len(args))
+	}
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM executions e
+		INNER JOIN tasks t ON t.id = e.task_id
+		` + where
+
+	var total int64
+	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count user executions: %w", err)
+	}
+
+	args = append(args, limit, offset)
+	query := `
+		SELECT
+			e.id,
+			e.task_id,
+			e.trigger_id,
+			e.scheduled_at,
+			e.status,
+			e.started_at,
+			e.heartbeat_at,
+			e.completed_at,
+			e.duration_ms,
+			e.retry_count,
+			e.error_message,
+			e.created_at
+		FROM executions e
+		INNER JOIN tasks t ON t.id = e.task_id
+		` + where + fmt.Sprintf(`
+		ORDER BY e.created_at DESC, e.id DESC
+		LIMIT $%d OFFSET $%d
+	`, len(args)-1, len(args))
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list user executions: %w", err)
+	}
+	defer rows.Close()
+
+	executions := make([]Execution, 0)
+	for rows.Next() {
+		var execution Execution
+		if err := rows.Scan(
+			&execution.ID,
+			&execution.TaskID,
+			&execution.TriggerID,
+			&execution.ScheduledAt,
+			&execution.Status,
+			&execution.StartedAt,
+			&execution.HeartbeatAt,
+			&execution.CompletedAt,
+			&execution.DurationMs,
+			&execution.RetryCount,
+			&execution.ErrorMessage,
+			&execution.CreatedAt,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan user execution: %w", err)
+		}
+		executions = append(executions, execution)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate user executions: %w", err)
+	}
+
+	return executions, total, nil
+}
+
 func (r *Repository) Update(
 	ctx context.Context,
 	execution *Execution,
@@ -415,7 +505,7 @@ func (r *Repository) FindLogsByUser(
 		INNER JOIN tasks t ON t.id = e.task_id
 		WHERE el.execution_id = $1
 			AND t.user_id = $2
-		ORDER BY created_at ASC
+		ORDER BY el.created_at ASC, el.id ASC
 	`
 
 	rows, err := r.db.Query(ctx, query, executionID, userID)

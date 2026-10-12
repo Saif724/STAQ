@@ -12,8 +12,20 @@ import (
 
 const staleExecutionTimeout = 2 * time.Minute
 
+const (
+	DefaultExecutionPageSize int64 = 20
+	MaxExecutionPageSize     int64 = 100
+)
+
 type Service struct {
 	repository *Repository
+}
+
+type ExecutionPage struct {
+	Items    []Execution `json:"items"`
+	Total    int64       `json:"total"`
+	Page     int64       `json:"page"`
+	PageSize int64       `json:"page_size"`
 }
 
 func NewService(repository *Repository) *Service {
@@ -214,6 +226,54 @@ func (s *Service) GetByIDAndUser(
 	}
 
 	return s.repository.FindByIDAndUser(ctx, executionID, userID)
+}
+
+func (s *Service) ListByUser(
+	ctx context.Context,
+	userID string,
+	taskID string,
+	status string,
+	page int64,
+	pageSize int64,
+) (*ExecutionPage, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, errors.New("user id is required")
+	}
+	if page < 1 {
+		return nil, fmt.Errorf("%w: page must be at least 1", ErrInvalidPagination)
+	}
+	if pageSize < 1 || pageSize > MaxExecutionPageSize {
+		return nil, fmt.Errorf("%w: page_size must be between 1 and %d", ErrInvalidPagination, MaxExecutionPageSize)
+	}
+	if (page - 1) > (1<<63-1)/pageSize {
+		return nil, fmt.Errorf("%w: requested page is too large", ErrInvalidPagination)
+	}
+
+	status = strings.ToUpper(strings.TrimSpace(status))
+	switch status {
+	case "", StatusPending, StatusRunning, StatusSuccess, StatusFailed, StatusCancelled, StatusTimedOut:
+	default:
+		return nil, fmt.Errorf("%w: invalid execution status %q", ErrInvalidExecutionFilter, status)
+	}
+
+	items, total, err := s.repository.FindPageByUser(
+		ctx,
+		strings.TrimSpace(userID),
+		strings.TrimSpace(taskID),
+		status,
+		int(pageSize),
+		(page-1)*pageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ExecutionPage{
+		Items:    items,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	}, nil
 }
 
 func (s *Service) ListLogs(

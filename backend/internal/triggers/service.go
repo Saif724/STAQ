@@ -9,6 +9,7 @@ import (
 
 	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/robfig/cron"
 )
 
@@ -55,10 +56,30 @@ func (s *Service) Create(
 	userID string,
 	input CreateTriggerInput,
 ) (*Trigger, error) {
+	task, err := s.taskService.GetByID(ctx, strings.TrimSpace(input.TaskID), strings.TrimSpace(userID))
+	if err != nil {
+		return nil, err
+	}
+
+	trigger, err := s.PrepareCreateForTask(userID, input, task)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repository.Create(ctx, trigger); err != nil {
+		return nil, err
+	}
+	return trigger, nil
+}
+
+func (s *Service) PrepareCreateForTask(
+	userID string,
+	input CreateTriggerInput,
+	task *tasks.Task,
+) (*Trigger, error) {
 	taskID := strings.TrimSpace(input.TaskID)
 	userID = strings.TrimSpace(userID)
 
-	if taskID == "" {
+	if taskID == "" || task == nil || task.ID != taskID {
 		return nil, errors.New("task id is required")
 	}
 
@@ -70,8 +91,8 @@ func (s *Service) Create(
 		return nil, ErrInvalidStartAt
 	}
 
-	if _, err := s.taskService.GetByID(ctx, taskID, userID); err != nil {
-		return nil, err
+	if task.UserID != userID {
+		return nil, tasks.ErrTaskNotFound
 	}
 
 	triggerType := strings.ToUpper(strings.TrimSpace(input.TriggerType))
@@ -124,11 +145,14 @@ func (s *Service) Create(
 		UpdatedAt:      now,
 	}
 
-	if err := s.repository.Create(ctx, trigger); err != nil {
-		return nil, err
-	}
+	return trigger, nil
+}
 
-	return trigger, err
+func (s *Service) CreateWithTx(ctx context.Context, tx pgx.Tx, trigger *Trigger) error {
+	if trigger == nil {
+		return errors.New("trigger is required")
+	}
+	return s.repository.CreateWithTx(ctx, tx, trigger)
 }
 
 func (s *Service) GetByID(

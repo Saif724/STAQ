@@ -10,6 +10,7 @@ import (
 
 	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -51,10 +52,30 @@ func (s *Service) Create(
 	userID string,
 	input CreateActionInput,
 ) (*Action, error) {
+	task, err := s.taskService.GetByID(ctx, strings.TrimSpace(input.TaskID), strings.TrimSpace(userID))
+	if err != nil {
+		return nil, err
+	}
+
+	action, err := s.PrepareCreateForTask(userID, input, task)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repository.Create(ctx, action); err != nil {
+		return nil, fmt.Errorf("failed to create action: %w", err)
+	}
+	return action, nil
+}
+
+func (s *Service) PrepareCreateForTask(
+	userID string,
+	input CreateActionInput,
+	task *tasks.Task,
+) (*Action, error) {
 	taskID := strings.TrimSpace(input.TaskID)
 	userID = strings.TrimSpace(userID)
 
-	if taskID == "" {
+	if taskID == "" || task == nil || task.ID != taskID {
 		return nil, errors.New("task id is required")
 	}
 
@@ -62,8 +83,8 @@ func (s *Service) Create(
 		return nil, errors.New("user id is required")
 	}
 
-	if _, err := s.taskService.GetByID(ctx, taskID, userID); err != nil {
-		return nil, err
+	if task.UserID != userID {
+		return nil, tasks.ErrTaskNotFound
 	}
 
 	actionType := strings.ToUpper(
@@ -95,11 +116,14 @@ func (s *Service) Create(
 		UpdatedAt:         now,
 	}
 
-	if err := s.repository.Create(ctx, action); err != nil {
-		return nil, fmt.Errorf("failed to create action: %w", err)
-	}
-
 	return action, nil
+}
+
+func (s *Service) CreateWithTx(ctx context.Context, tx pgx.Tx, action *Action) error {
+	if action == nil {
+		return errors.New("action is required")
+	}
+	return s.repository.CreateWithTx(ctx, tx, action)
 }
 
 func (s *Service) GetByID(

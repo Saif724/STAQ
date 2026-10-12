@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Saif724/STAQ/backend/pkg/hash"
 	"github.com/google/uuid"
 )
+
+var ErrInvalidProfile = errors.New("invalid profile")
 
 type Service struct {
 	repository *Repository
@@ -78,6 +81,37 @@ func (s *Service) GetByID(
 	}
 
 	return s.repository.FindByID(ctx, id)
+}
+
+func (s *Service) UpdateProfile(
+	ctx context.Context,
+	userID string,
+	fullName string,
+	timezone string,
+) (*User, error) {
+	userID = strings.TrimSpace(userID)
+	fullName = strings.TrimSpace(fullName)
+	timezone = strings.TrimSpace(timezone)
+
+	if userID == "" {
+		return nil, errors.New("user id is required")
+	}
+	if length := utf8.RuneCountInString(fullName); length < 2 || length > 100 {
+		return nil, fmt.Errorf("%w: full name must be between 2 and 100 characters", ErrInvalidProfile)
+	}
+	if timezone == "" || len(timezone) > 50 {
+		return nil, fmt.Errorf("%w: timezone must be a valid IANA time zone", ErrInvalidProfile)
+	}
+	if _, err := time.LoadLocation(timezone); err != nil {
+		return nil, fmt.Errorf("%w: timezone must be a valid IANA time zone", ErrInvalidProfile)
+	}
+	if _, err := s.repository.FindByID(ctx, userID); err != nil {
+		return nil, err
+	}
+	if err := s.repository.UpdateProfile(ctx, userID, fullName, timezone); err != nil {
+		return nil, err
+	}
+	return s.repository.FindByID(ctx, userID)
 }
 
 func (s *Service) GetByEmail(

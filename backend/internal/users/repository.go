@@ -80,16 +80,18 @@ func (r *Repository) FindByID(
 ) (*User, error) {
 	query := `
 		SELECT
-			id,
-			full_name,
-			email,
-			password_hash,
-			email_verified,
-			is_active,
-			created_at,
-			updated_at
-		FROM users
-		WHERE id=$1
+			u.id,
+			u.full_name,
+			u.email,
+			u.password_hash,
+			u.email_verified,
+			u.is_active,
+			u.created_at,
+			u.updated_at,
+			COALESCE(us.timezone, 'UTC')
+		FROM users u
+		LEFT JOIN user_settings us ON us.user_id = u.id
+		WHERE u.id = $1
 	`
 
 	user := &User{}
@@ -103,6 +105,7 @@ func (r *Repository) FindByID(
 		&user.IsActive,
 		&user.CreatedAt,
 		&user.UpdatedAt,
+		&user.Timezone,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -114,6 +117,48 @@ func (r *Repository) FindByID(
 	}
 
 	return user, nil
+}
+
+func (r *Repository) UpdateProfile(
+	ctx context.Context,
+	userID string,
+	fullName string,
+	timezone string,
+) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin profile update: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	result, err := tx.Exec(ctx, `
+		UPDATE users
+		SET full_name = $1, updated_at = NOW()
+		WHERE id = $2
+	`, fullName, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update profile name: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+
+	result, err = tx.Exec(ctx, `
+		UPDATE user_settings
+		SET timezone = $1, updated_at = NOW()
+		WHERE user_id = $2
+	`, timezone, userID)
+	if err != nil {
+		return fmt.Errorf("failed to update user timezone: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return errors.New("user settings not found")
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit profile update: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) FindByEmail(

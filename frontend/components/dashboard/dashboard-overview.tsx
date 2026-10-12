@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
+import Link from "next/link";
 import {
   Activity,
   AlertCircle,
@@ -10,7 +11,6 @@ import {
   ChevronDown,
   Clock3,
   Command,
-  Layers3,
   ListTodo,
   Menu,
   Moon,
@@ -23,10 +23,13 @@ import {
 
 import { ApiError } from "@/lib/api/client";
 import {
+  getDashboardSummary,
   getCurrentUser,
   getQueues,
   getTasks,
   type CurrentUser,
+  type DashboardRecentExecution,
+  type DashboardSummary,
   type Queue,
   type Task,
 } from "@/lib/api/dashboard";
@@ -41,6 +44,7 @@ type DashboardData = {
   user: CurrentUser | null;
   tasks: Task[];
   queues: Queue[];
+  summary: DashboardSummary | null;
 };
 
 const subscribe = () => () => {};
@@ -66,35 +70,34 @@ function formatDate(value: string) {
   }
 
   return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+    dateStyle: "medium",
+    timeStyle: "short",
   }).format(date);
 }
 
-function StatusBadge({ status }: { status: Task["status"] }) {
-  const styles: Record<Task["status"], string> = {
-    Active:
-      "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300",
-    Paused:
-      "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-300",
-    Archived: "border-border bg-muted text-muted-foreground",
-  };
+function formatDateInTimezone(value: string, timezone: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timezone,
+  }).format(date);
+}
 
+function ExecutionStatusBadge({ status }: { status: DashboardRecentExecution["status"] }) {
+  const styles: Record<DashboardRecentExecution["status"], string> = {
+    PENDING: "border-border bg-muted text-muted-foreground",
+    RUNNING: "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-300",
+    SUCCESS: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+    FAILED: "border-destructive/20 bg-destructive/10 text-destructive",
+    CANCELLED: "border-border bg-muted text-muted-foreground",
+    TIMED_OUT: "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  };
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${styles[status]}`}
-    >
-      <span
-        className={`size-1.5 rounded-full ${
-          status === "Active"
-            ? "bg-emerald-500"
-            : status === "Paused"
-              ? "bg-amber-500"
-              : "bg-muted-foreground"
-        }`}
-      />
-      {status}
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${styles[status]}`}>
+      <span className="size-1.5 rounded-full bg-current" />
+      {status.replaceAll("_", " ")}
     </span>
   );
 }
@@ -105,19 +108,23 @@ function StatCard({
   description,
   icon: Icon,
   accent,
+  suffix,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   description: string;
   icon: typeof ListTodo;
   accent: string;
+  suffix?: string;
 }) {
   return (
     <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/2 transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p>
+          <p className="mt-3 text-3xl font-semibold tracking-tight tabular-nums">
+            {value ?? "—"}{value !== null && suffix}
+          </p>
         </div>
 
         <div
@@ -146,6 +153,7 @@ export default function DashboardOverview() {
     user: null,
     tasks: [],
     queues: [],
+    summary: null,
   });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -170,6 +178,7 @@ export default function DashboardOverview() {
         getCurrentUser(),
         getTasks(),
         getQueues(),
+        getDashboardSummary(),
       ]);
 
       const authFailure = results.some(
@@ -186,7 +195,7 @@ export default function DashboardOverview() {
       }
 
       const nextErrors: string[] = [];
-      const [userResult, taskResult, queueResult] = results;
+      const [userResult, taskResult, queueResult, summaryResult] = results;
 
       if (userResult.status === "fulfilled") {
         setData((previous) => ({
@@ -215,6 +224,15 @@ export default function DashboardOverview() {
         nextErrors.push("Queues could not be loaded.");
       }
 
+      if (summaryResult.status === "fulfilled") {
+        setData((previous) => ({
+          ...previous,
+          summary: summaryResult.value.data,
+        }));
+      } else {
+        nextErrors.push("Execution summary could not be loaded.");
+      }
+
       setErrors(nextErrors);
     } catch {
       setErrors(["Unable to load dashboard data. Please try again."]);
@@ -225,82 +243,9 @@ export default function DashboardOverview() {
   }, [router]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function initialLoad() {
-      if (!getAccessToken()) {
-        clearTokens();
-        router.replace("/login");
-        return;
-      }
-
-      try {
-        const results = await Promise.allSettled([
-          getCurrentUser(),
-          getTasks(),
-          getQueues(),
-        ]);
-
-        if (cancelled) return;
-
-        const authFailure = results.some(
-          (result) =>
-            result.status === "rejected" &&
-            result.reason instanceof ApiError &&
-            result.reason.status === 401,
-        );
-
-        if (authFailure) {
-          clearTokens();
-          router.replace("/login");
-          return;
-        }
-
-        const nextErrors: string[] = [];
-        const [userResult, taskResult, queueResult] = results;
-
-        setData((previous) => {
-          const next = { ...previous };
-
-          if (userResult.status === "fulfilled") {
-            next.user = userResult.value.data;
-          } else {
-            nextErrors.push("Your profile could not be loaded.");
-          }
-
-          if (taskResult.status === "fulfilled") {
-            next.tasks = taskResult.value.data;
-          } else {
-            nextErrors.push("Tasks could not be loaded.");
-          }
-
-          if (queueResult.status === "fulfilled") {
-            next.queues = queueResult.value.data;
-          } else {
-            nextErrors.push("Queues could not be loaded.");
-          }
-
-          return next;
-        });
-
-        setErrors(nextErrors);
-      } catch {
-        if (!cancelled) {
-          setErrors(["Unable to load dashboard data. Please try again."]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void initialLoad();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
+    const timeoutId = window.setTimeout(() => void loadDashboard(), 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [loadDashboard]);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -327,14 +272,12 @@ export default function DashboardOverview() {
     (task) => task.status === "Archived",
   ).length;
 
-  const activeQueues = data.queues.filter((queue) => queue.is_active).length;
-
-  const recentTasks = [...data.tasks]
-    .sort(
-      (a, b) =>
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-    )
-    .slice(0, 5);
+  const failedRuns = data.summary
+    ? data.summary.failed_count + data.summary.timed_out_count
+    : null;
+  const recentExecutions = data.summary?.recent_executions ?? [];
+  const recentFailures = data.summary?.recent_failures ?? [];
+  const upcomingExecutions = data.summary?.upcoming_executions ?? [];
 
   const firstName = data.user?.full_name?.trim().split(/\s+/)[0];
 
@@ -460,7 +403,9 @@ export default function DashboardOverview() {
                     <Plus className="size-4" />
                     Create a task
                   </Button>
-
+                  <Link href="/executions" className="inline-flex h-10 items-center rounded-lg border border-border bg-background px-4 text-sm font-medium hover:bg-muted">
+                    View executions
+                  </Link>
                 </div>
               </div>
 
@@ -525,10 +470,10 @@ export default function DashboardOverview() {
               </span>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
               <StatCard
                 label="Total tasks"
-                value={data.tasks.length}
+                value={loading ? null : data.tasks.length}
                 description="All tasks in your workspace"
                 icon={ListTodo}
                 accent="bg-primary/10 text-primary"
@@ -536,26 +481,35 @@ export default function DashboardOverview() {
 
               <StatCard
                 label="Active tasks"
-                value={activeTasks}
+                value={loading ? null : activeTasks}
                 description="Tasks currently marked active"
                 icon={Activity}
                 accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
               />
 
               <StatCard
-                label="Paused tasks"
-                value={pausedTasks}
-                description="Tasks currently on hold"
-                icon={Clock3}
+                label="Successful runs"
+                value={data.summary?.successful_count ?? null}
+                description={`Completed successfully · last ${data.summary?.window_days ?? 30} days`}
+                icon={CheckCircle2}
+                accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+              />
+
+              <StatCard
+                label="Failed or timed out"
+                value={failedRuns}
+                description={`Unsuccessful completed runs · last ${data.summary?.window_days ?? 30} days`}
+                icon={AlertCircle}
                 accent="bg-amber-500/10 text-amber-600 dark:text-amber-400"
               />
 
               <StatCard
-                label="Active queues"
-                value={activeQueues}
-                description={`${data.queues.length} total queues configured`}
-                icon={Layers3}
-                accent="bg-violet-500/10 text-violet-600 dark:text-violet-400"
+                label="Success rate"
+                value={data.summary ? Math.round(data.summary.success_rate) : null}
+                description={`Completed runs · last ${data.summary?.window_days ?? 30} days`}
+                icon={CheckCircle2}
+                accent="bg-sky-500/10 text-sky-600 dark:text-sky-400"
+                suffix="%"
               />
             </div>
           </section>
@@ -564,17 +518,13 @@ export default function DashboardOverview() {
             <section className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm shadow-black/2">
               <div className="flex items-center justify-between border-b border-border/70 px-5 py-5 sm:px-6">
                 <div>
-                  <h3 className="font-semibold tracking-tight">
-                    Recently updated tasks
-                  </h3>
+                  <h3 className="font-semibold tracking-tight">Recent executions</h3>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Your latest task changes.
+                    Latest recorded runs across your tasks.
                   </p>
                 </div>
 
-                <div className="flex size-9 items-center justify-center rounded-xl bg-muted">
-                  <ListTodo className="size-4 text-muted-foreground" />
-                </div>
+                <Link href="/executions" className="text-xs font-medium text-primary hover:underline">View all</Link>
               </div>
 
               {loading ? (
@@ -589,39 +539,35 @@ export default function DashboardOverview() {
                     </div>
                   ))}
                 </div>
-              ) : recentTasks.length === 0 ? (
+              ) : !data.summary ? (
+                <p className="px-6 py-12 text-center text-sm text-muted-foreground">Execution summary is unavailable.</p>
+              ) : recentExecutions.length === 0 ? (
                 <div className="flex flex-col items-center px-6 py-12 text-center">
                   <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                    <ListTodo className="size-5" />
+                    <Activity className="size-5" />
                   </div>
-                  <h4 className="mt-4 text-sm font-semibold">No tasks yet</h4>
+                  <h4 className="mt-4 text-sm font-semibold">No executions yet</h4>
                   <p className="mt-1 max-w-xs text-sm leading-6 text-muted-foreground">
-                    When you create tasks, their latest updates will appear
-                    here.
+                    Scheduled runs will appear here after the worker processes them.
                   </p>
                 </div>
               ) : (
                 <div className="divide-y divide-border/70">
-                  {recentTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/30 sm:px-6"
-                    >
+                  {recentExecutions.map((execution) => (
+                    <Link key={execution.id} href={`/executions/${execution.id}`} className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/30 sm:px-6">
                       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
                         <Workflow className="size-4.5" />
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
-                          {task.name}
-                        </p>
+                        <p className="truncate text-sm font-medium">{execution.task_name}</p>
                         <p className="mt-1 truncate text-xs text-muted-foreground">
-                          Updated {formatDate(task.updated_at)}
+                          Scheduled {formatDate(execution.scheduled_at)}
                         </p>
                       </div>
 
-                      <StatusBadge status={task.status} />
-                    </div>
+                      <ExecutionStatusBadge status={execution.status} />
+                    </Link>
                   ))}
                 </div>
               )}
@@ -633,7 +579,7 @@ export default function DashboardOverview() {
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Clock3 className="size-3.5" />
-                  Sorted by last update
+                  Latest executions
                 </span>
               </div>
             </section>
@@ -701,67 +647,65 @@ export default function DashboardOverview() {
               </section>
 
               <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/2 sm:p-6">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
-                    <Layers3 className="size-5" />
-                  </div>
+                <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="font-semibold tracking-tight">
-                      Queue overview
-                    </h3>
+                    <h3 className="font-semibold tracking-tight">Recent failures</h3>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Your task organization.
+                      Failed or timed-out runs that need attention.
                     </p>
                   </div>
+                  <AlertCircle className="size-4 text-destructive" />
                 </div>
 
-                <div className="mt-5 flex items-end justify-between">
-                  <div>
-                    <p className="text-3xl font-semibold tracking-tight">
-                      {data.queues.length}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Configured queues
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
-                      {activeQueues}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Active</p>
-                  </div>
-                </div>
-
-                {data.queues.length === 0 && !loading ? (
-                  <p className="mt-4 rounded-xl bg-muted/50 p-3 text-xs leading-5 text-muted-foreground">
-                    No queues are available yet. Queues organize the tasks that
-                    belong to your automation workflows.
+                {loading && !data.summary ? (
+                  <p className="mt-5 text-sm text-muted-foreground">Loading execution summary…</p>
+                ) : !data.summary ? (
+                  <p className="mt-5 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">Execution summary is unavailable.</p>
+                ) : recentFailures.length === 0 ? (
+                  <p className="mt-5 rounded-lg bg-muted/40 p-3 text-sm text-muted-foreground">
+                    No failed or timed-out executions were recorded.
                   </p>
                 ) : (
-                  <div className="mt-4 space-y-2">
-                    {data.queues.slice(0, 3).map((queue) => (
-                      <div
-                        key={queue.id}
-                        className="flex items-center gap-2 rounded-xl border border-border/70 px-3 py-2.5"
-                      >
-                        <span
-                          className={`size-2 rounded-full ${
-                            queue.is_active
-                              ? "bg-emerald-500"
-                              : "bg-muted-foreground"
-                          }`}
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm">
-                          {queue.name}
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          {queue.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </div>
+                  <div className="mt-4 divide-y divide-border/70">
+                    {recentFailures.slice(0, 3).map((execution) => (
+                      <Link key={execution.id} href={`/executions/${execution.id}`} className="block py-3 first:pt-0 last:pb-0 hover:text-primary">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm font-medium">{execution.task_name}</span>
+                          <ExecutionStatusBadge status={execution.status} />
+                        </div>
+                        <p className="mt-1 truncate text-xs text-muted-foreground">
+                          {execution.error_message || `Scheduled ${formatDate(execution.scheduled_at)}`}
+                        </p>
+                      </Link>
                     ))}
                   </div>
                 )}
+
+                <div className="mt-5 border-t border-border/70 pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold">Upcoming work</h4>
+                      <p className="mt-1 text-xs text-muted-foreground">Next active scheduled triggers.</p>
+                    </div>
+                    <Clock3 className="size-4 text-muted-foreground" />
+                  </div>
+                  {loading && !data.summary ? (
+                    <p className="mt-3 text-sm text-muted-foreground">Loading schedule…</p>
+                  ) : !data.summary ? (
+                    <p className="mt-3 text-sm text-muted-foreground">Schedule summary is unavailable.</p>
+                  ) : upcomingExecutions.length === 0 ? (
+                    <p className="mt-3 text-sm text-muted-foreground">No upcoming runs are scheduled.</p>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {upcomingExecutions.slice(0, 3).map((run) => (
+                        <li key={run.trigger_id} className="flex items-start justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate">{run.task_name}</span>
+                          <time className="shrink-0 text-right text-xs text-muted-foreground">{formatDateInTimezone(run.next_run_at, run.timezone)}</time>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </section>
             </div>
           </div>

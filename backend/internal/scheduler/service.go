@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Saif724/STAQ/backend/internal/broker"
+	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/triggers"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -103,7 +104,7 @@ func (s *Service) processOne(
 
 	now := time.Now().UTC()
 
-	trigger, err := s.triggerRepository.FindDueForUpdate(ctx, tx, now)
+	trigger, taskStatus, err := s.triggerRepository.FindDueForUpdate(ctx, tx, now)
 	if err != nil {
 		if err == triggers.ErrTriggerNotFound {
 			return false, nil
@@ -115,6 +116,28 @@ func (s *Service) processOne(
 	scheduledTime := trigger.NextRunAt
 
 	if trigger.TriggerType == triggers.TypeOnce {
+		trigger.LastRunAt = &scheduledTime
+		trigger.IsActive = false
+		trigger.UpdatedAt = now
+
+		if !shouldDispatch(taskStatus, false) {
+			if err := s.updateTrigger(ctx, tx, trigger); err != nil {
+				return false, fmt.Errorf("failed to deactivate skipped one-time trigger: %w", err)
+			}
+			if err := tx.Commit(ctx); err != nil {
+				return false, fmt.Errorf("failed to commit skipped one-time trigger: %w", err)
+			}
+
+			s.logger.Info().
+				Str("trigger_id", trigger.ID).
+				Str("task_id", trigger.TaskID).
+				Str("task_status", taskStatus).
+				Time("scheduled_at", scheduledTime).
+				Msg("skipped one-time trigger for inactive task")
+
+			return true, nil
+		}
+
 		job := broker.TaskJob{
 			ID:          uuid.NewString(),
 			TaskID:      trigger.TaskID,
@@ -126,10 +149,6 @@ func (s *Service) processOne(
 		if err := s.broker.PublishTaskJob(ctx, job); err != nil {
 			return false, fmt.Errorf("failed to publish task job: %w", err)
 		}
-
-		trigger.LastRunAt = &scheduledTime
-		trigger.IsActive = false
-		trigger.UpdatedAt = now
 
 		if err := s.updateTrigger(ctx, tx, trigger); err != nil {
 			return false, fmt.Errorf("failed to deactivate one-time trigger: %w", err)
@@ -156,6 +175,7 @@ func (s *Service) processOne(
 	}
 
 	stale := now.Sub(scheduledTime) > maxCatchUpWindow
+	dispatch := shouldDispatch(taskStatus, stale)
 
 	trigger.LastRunAt = &scheduledTime
 	trigger.NextRunAt = nextRunAt
@@ -165,17 +185,22 @@ func (s *Service) processOne(
 		return false, fmt.Errorf("failed to update trigger schedule: %w", err)
 	}
 
-	if stale {
+	if !dispatch {
 		if err := tx.Commit(ctx); err != nil {
 			return false, fmt.Errorf("failed to commit trigger resync: %w", err)
 		}
 
-		s.logger.Warn().
+		logEvent := s.logger.Info()
+		if stale {
+			logEvent = s.logger.Warn()
+		}
+		logEvent.
 			Str("trigger_id", trigger.ID).
 			Str("task_id", trigger.TaskID).
+			Str("task_status", taskStatus).
 			Time("missed_run", scheduledTime).
 			Time("next_run_at", nextRunAt).
-			Msg("skipped stale trigger, resynced without dispatching")
+			Msg("skipped trigger occurrence and advanced schedule without dispatching")
 
 		return true, nil
 	}
@@ -205,6 +230,10 @@ func (s *Service) processOne(
 		Msg("trigger dispatched and schedule advanced")
 
 	return true, nil
+}
+
+func shouldDispatch(taskStatus string, stale bool) bool {
+	return taskStatus == tasks.StatusActive && !stale
 }
 
 func (s *Service) updateTrigger(

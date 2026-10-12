@@ -6,6 +6,7 @@ type User struct {
 	ID            string    `json:"id"`
 	FullName      string    `json:"full_name"`
 	Email         string    `json:"email"`
+	Timezone      string    `json:"timezone"`
 	PasswordHash  string    `json:"-"`
 	EmailVerified bool      `json:"email_verified"`
 	IsActive      bool      `json:"is_active"`

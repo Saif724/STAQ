@@ -3,13 +3,11 @@
 import { useRouter } from "next/navigation";
 import {
   Activity,
-  CircleHelp,
   LayoutDashboard,
-  Layers3,
+  Link2,
   ListTodo,
   LogOut,
   Settings2,
-  ShieldCheck,
   Workflow,
   X,
 } from "lucide-react";
@@ -23,7 +21,7 @@ type SidebarProps = {
   user: CurrentUser | null;
   onLogout: () => void;
   loggingOut: boolean;
-  activePage: "overview" | "tasks" | "queues";
+  activePage: "overview" | "tasks" | "executions" | "connections" | "settings";
 };
 
 function getInitials(name: string) {
@@ -50,7 +48,9 @@ export default function Sidebar({
   const navigation = [
     { label: "Overview", path: "/dashboard", icon: LayoutDashboard, key: "overview" },
     { label: "Tasks", path: "/tasks", icon: ListTodo, key: "tasks" },
-    { label: "Queues", path: "/queues", icon: Layers3, key: "queues" },
+    { label: "Executions", path: "/executions", icon: Activity, key: "executions" },
+    { label: "Connections", path: "/dashboard/connections", icon: Link2, key: "connections" },
+    { label: "Settings", path: "/settings", icon: Settings2, key: "settings" },
   ] as const;
 
   return (
@@ -65,11 +65,11 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col border-r border-border/80 bg-card transition-transform duration-200 lg:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex w-66 flex-col border-r border-border/80 bg-card transition-transform duration-200 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex h-[76px] items-center justify-between border-b border-border/70 px-6">
+        <div className="flex h-19 items-center justify-between border-b border-border/70 px-6">
           <button
             type="button"
             onClick={() => {
@@ -125,7 +125,7 @@ export default function Sidebar({
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
                 >
-                  <Icon className="size-[18px]" />
+                  <Icon className="size-4.5" />
                   {label}
                   {active && (
                     <span className="ml-auto size-1.5 rounded-full bg-primary" />
@@ -133,36 +133,6 @@ export default function Sidebar({
                 </button>
               );
             })}
-
-            <div
-              title="Connections page has not been implemented yet"
-              className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground/70"
-            >
-              <ShieldCheck className="size-[18px]" />
-              Connections
-              <span className="ml-auto text-[10px] font-medium uppercase tracking-wide">
-                Soon
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="mx-4 mt-7 border-t border-border/70" />
-
-        <div className="px-4 pt-5">
-          <p className="mb-3 px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Preferences
-          </p>
-
-          <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground">
-            <Settings2 className="size-[18px]" />
-            Workspace settings
-            <span className="ml-auto text-[10px]">Soon</span>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground">
-            <CircleHelp className="size-[18px]" />
-            Help &amp; support
           </div>
         </div>
 

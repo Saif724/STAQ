@@ -449,26 +449,8 @@ paths:
             type: string
 
       responses:
-        '200':
-          description: Google authentication completed successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/LoginResponseWrapper'
-
-        '400':
-          description: Google authentication failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-        '401':
-          description: OAuth state is invalid or Google authentication failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+        '303':
+          description: Redirect to the configured frontend OAuth callback with a one-time login code or fixed error code
 
 
   # ============================================================
@@ -485,6 +467,12 @@ paths:
         - bearerAuth: []
 
       responses:
+        '200':
+          description: Current profile and timezone preference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponseWrapper'
         '401':
           description: Authentication required
           content:
@@ -499,10 +487,109 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+    put:
+      tags:
+        - Users
+      summary: Update profile and timezone preference
+      operationId: updateCurrentUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserProfileRequest'
+      responses:
+        '200':
+          description: Updated profile and timezone preference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponseWrapper'
+        '400':
+          description: Invalid profile fields or IANA timezone
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 
   # ============================================================
   # GMAIL CONNECTION
   # ============================================================
+
+  /connections:
+    get:
+      tags:
+        - Gmail
+      summary: List current user's connections
+      operationId: listConnections
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Connection metadata without credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionListResponseWrapper'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /connections/{id}:
+    delete:
+      tags:
+        - Gmail
+      summary: Disconnect an owned connection
+      operationId: deleteConnection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Connection deleted
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Connection not found for this user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /connections/google:
     get:
@@ -527,6 +614,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+        '500':
+          description: Failed to start Gmail authorization
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /connections/google/authorization:
+    get:
+      tags:
+        - Gmail
+      summary: Get a Gmail authorization URL
+      description: Returns the Google OAuth URL so browser clients can navigate without sending their bearer token through a redirect.
+      operationId: getGoogleAuthorizationUrl
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Authorization URL created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [authorization_url]
+                    properties:
+                      authorization_url:
+                        type: string
+                        format: uri
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Failed to start Gmail authorization
           content:
@@ -562,31 +688,53 @@ paths:
             type: string
 
       responses:
-        '200':
-          description: Gmail account connected successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GmailConnectionResponseWrapper'
-
-        '400':
-          description: Gmail authorization failed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-        '500':
-          description: Internal server error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+        '303':
+          description: Redirect to configured frontend with a fixed Gmail result code
 
 
   # ============================================================
   # TASKS
   # ============================================================
+
+  /task-setups:
+    post:
+      tags:
+        - Tasks
+      summary: Atomically create a task, trigger, and actions
+      operationId: createTaskSetup
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskSetupRequest'
+      responses:
+        '201':
+          description: Task, trigger, and actions created in one transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskSetupResponseWrapper'
+        '400':
+          description: Invalid task setup
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Setup transaction failed and all writes were rolled back
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /tasks:
     post:
@@ -626,13 +774,6 @@ paths:
 
         '401':
           description: Authentication required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-        '404':
-          description: Queue not found
           content:
             application/json:
               schema:
@@ -1591,6 +1732,68 @@ paths:
   # EXECUTIONS
   # ============================================================
 
+  /executions:
+    get:
+      tags:
+        - Executions
+      summary: List the authenticated user's executions
+      operationId: listExecutions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: task_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, RUNNING, SUCCESS, FAILED, CANCELLED, TIMED_OUT]
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Executions and total count for the authenticated user and selected filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionPageResponseWrapper'
+        '400':
+          description: Invalid status filter or pagination values
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /executions/{id}:
     parameters:
       - name: id
@@ -1677,6 +1880,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+
+  /dashboard/summary:
+    get:
+      tags:
+        - Tasks
+      summary: Get dashboard summary for the authenticated user
+      operationId: getDashboardSummary
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Real task execution summary, recent executions, failures, and upcoming runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummaryResponseWrapper'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
           content:
@@ -1927,6 +2159,7 @@ components:
         - full_name
         - email
         - email_verified
+        - timezone
       properties:
         id:
           type: string
@@ -1938,6 +2171,25 @@ components:
           format: email
         email_verified:
           type: boolean
+        timezone:
+          type: string
+          description: Saved IANA timezone preference
+
+
+    UpdateUserProfileRequest:
+      type: object
+      required:
+        - full_name
+        - timezone
+      properties:
+        full_name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        timezone:
+          type: string
+          maxLength: 50
+          description: Valid IANA timezone
 
 
     UserResponseWrapper:
@@ -2017,6 +2269,52 @@ components:
           format: email
 
 
+    ConnectionMetadata:
+      type: object
+      required:
+        - id
+        - provider
+        - account_email
+        - scopes
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          example: GOOGLE
+        account_email:
+          type: string
+          format: email
+        scopes:
+          type: array
+          items:
+            type: string
+        token_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+
+    ConnectionListResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConnectionMetadata'
+
+
     GmailConnectionResponseWrapper:
       type: object
       required:
@@ -2051,18 +2349,98 @@ components:
           minimum: 0
 
 
+    CreateTaskSetupRequest:
+      type: object
+      required:
+        - name
+        - timeout_seconds
+        - max_retries
+        - trigger_type
+        - timezone
+        - start_at
+        - actions
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        timeout_seconds:
+          type: integer
+          minimum: 1
+        max_retries:
+          type: integer
+          minimum: 0
+        trigger_type:
+          type: string
+          enum: [ONCE, DAILY, WEEKLY, MONTHLY, YEARLY, CRON]
+        cron_expression:
+          type: string
+          nullable: true
+        timezone:
+          type: string
+        start_at:
+          type: string
+          format: date-time
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/SetupActionRequest'
+
+
+    SetupActionRequest:
+      type: object
+      required:
+        - action_type
+        - execution_order
+        - configuration
+        - continue_on_failure
+      properties:
+        action_type:
+          type: string
+          enum: [REMINDER, EMAIL, HTTP, SHELL]
+        execution_order:
+          type: integer
+          minimum: 1
+        configuration:
+          type: object
+          additionalProperties: true
+        continue_on_failure:
+          type: boolean
+
+
+    TaskSetupResult:
+      type: object
+      required: [task, trigger, actions]
+      properties:
+        task:
+          $ref: '#/components/schemas/Task'
+        trigger:
+          $ref: '#/components/schemas/Trigger'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Action'
+
+
+    TaskSetupResponseWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/TaskSetupResult'
+
+
     UpdateTaskRequest:
       type: object
       required:
-        - queue_id
         - name
         - status
         - timeout_seconds
         - max_retries
       properties:
-        queue_id:
-          type: string
-          format: uuid
         name:
           type: string
         description:
@@ -2546,6 +2924,133 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/Execution'
+
+
+    ExecutionPage:
+      type: object
+      required:
+        - items
+        - total
+        - page
+        - page_size
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Execution'
+        total:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+
+    ExecutionPageResponseWrapper:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/ExecutionPage'
+
+
+    DashboardSummary:
+      type: object
+      required:
+        - window_starts_at
+        - window_days
+        - successful_count
+        - failed_count
+        - timed_out_count
+        - cancelled_count
+        - pending_count
+        - running_count
+        - success_rate
+        - recent_executions
+        - recent_failures
+        - upcoming_executions
+      properties:
+        window_starts_at:
+          type: string
+          format: date-time
+        window_days:
+          type: integer
+          enum: [30]
+        successful_count:
+          type: integer
+          format: int64
+        failed_count:
+          type: integer
+          format: int64
+        timed_out_count:
+          type: integer
+          format: int64
+        cancelled_count:
+          type: integer
+          format: int64
+        pending_count:
+          type: integer
+          format: int64
+        running_count:
+          type: integer
+          format: int64
+        success_rate:
+          type: number
+          format: double
+          description: Successful count divided by successful, failed, and timed-out executions; pending, running, and cancelled executions are excluded.
+        recent_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecentExecution'
+        recent_failures:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecentExecution'
+        upcoming_executions:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpcomingRun'
+
+
+    RecentExecution:
+      allOf:
+        - $ref: '#/components/schemas/Execution'
+        - type: object
+          required: [task_name]
+          properties:
+            task_name:
+              type: string
+
+
+    UpcomingRun:
+      type: object
+      required: [task_id, task_name, trigger_id, trigger_type, next_run_at, timezone]
+      properties:
+        task_id:
+          type: string
+          format: uuid
+        task_name:
+          type: string
+        trigger_id:
+          type: string
+          format: uuid
+        trigger_type:
+          type: string
+        next_run_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+
+
+    DashboardSummaryResponseWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/DashboardSummary'
 
 
     ExecutionLog:

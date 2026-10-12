@@ -1,34 +1,23 @@
 package email
 
 import (
-	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
-	"time"
 
-	"github.com/Saif724/STAQ/backend/internal/connections"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
 	"github.com/Saif724/STAQ/backend/internal/shared/response"
 )
 
-type connectionResponse struct {
-	ID                string    `json:"id"`
-	UserID            string    `json:"user_id"`
-	Provider          string    `json:"provider"`
-	ProviderAccountID string    `json:"provider_account_id"`
-	AccountEmail      string    `json:"account_email"`
-	Scopes            []string  `json:"scopes"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
-}
-
 type Handler struct {
-	service *Service
+	service     *Service
+	frontendURL string
 }
 
-func NewHandler(service *Service) *Handler {
+func NewHandler(service *Service, frontendURL string) *Handler {
 	return &Handler{
-		service: service,
+		service:     service,
+		frontendURL: strings.TrimRight(frontendURL, "/"),
 	}
 }
 
@@ -68,6 +57,27 @@ func (h *Handler) BeginGmailAuthorization(
 	)
 }
 
+func (h *Handler) GmailAuthorizationURL(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		response.ErrorJSON(w, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication is required")
+		return
+	}
+
+	authorizationURL, err := h.service.BeginGmailAuthorization(r.Context(), userID)
+	if err != nil {
+		response.ErrorJSON(w, http.StatusInternalServerError, "GMAIL_AUTHORIZATION_FAILED", "Failed to start Gmail authorization")
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{
+		"authorization_url": authorizationURL,
+	})
+}
+
 func (h *Handler) CompleteGmailAuthorization(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -79,70 +89,43 @@ func (h *Handler) CompleteGmailAuthorization(
 	oauthError := strings.TrimSpace(query.Get("error"))
 
 	if oauthError != "" {
-		response.ErrorJSON(
-			w,
-			http.StatusBadRequest,
-			"GMAIL_AUTHORIZATION_DENIED",
-			"Google authorization was denied",
-		)
-
+		h.redirectGmailResult(w, r, "error", "denied")
 		return
 	}
 
 	if state == "" || code == "" {
-		response.ErrorJSON(
-			w,
-			http.StatusBadRequest,
-			"INVALID_OAUTH_CALLBACK",
-			"Missing OAuth state or authorization code",
-		)
-	}
-
-	userID, connection, err := h.service.CompleteGmailAuthorization(r.Context(), state, code)
-
-	if err != nil {
-		fmt.Printf("Gmail callback error: %v\n", err)
-		response.ErrorJSON(
-			w,
-			http.StatusBadRequest,
-			"GMAIL_CONNECTION_FAILED",
-			err.Error(),
-		)
+		h.redirectGmailResult(w, r, "error", "invalid_callback")
 		return
 	}
 
-	if connection == nil {
-		response.ErrorJSON(
-			w,
-			http.StatusInternalServerError,
-			"GMAIL_CONNECTION_FAILED",
-			"Gmail connection was not created",
-		)
+	_, connection, err := h.service.CompleteGmailAuthorization(r.Context(), state, code)
+
+	if err != nil || connection == nil {
+		h.redirectGmailResult(w, r, "error", "connection_failed")
+		return
 	}
 
-	response.JSON(
-		w,
-		http.StatusOK,
-		map[string]any{
-			"user_id":       userID,
-			"connection":    toConnectionResponsd(connection),
-			"provider":      connection.Provider,
-			"account_email": connection.AccountEmail,
-		},
-	)
+	h.redirectGmailResult(w, r, "connected", "")
 }
 
-func toConnectionResponsd(
-	connection *connections.Connection,
-) connectionResponse {
-	return connectionResponse{
-		ID:                connection.ID,
-		UserID:            connection.UserID,
-		Provider:          connection.Provider,
-		ProviderAccountID: connection.ProviderAccountID,
-		AccountEmail:      connection.AccountEmail,
-		Scopes:            connection.Scopes,
-		CreatedAt:         connection.CreatedAt,
-		UpdatedAt:         connection.UpdatedAt,
+func (h *Handler) redirectGmailResult(
+	w http.ResponseWriter,
+	r *http.Request,
+	result string,
+	reason string,
+) {
+	frontend, err := url.Parse(h.frontendURL)
+	if err != nil || frontend.Host == "" || (frontend.Scheme != "https" && frontend.Scheme != "http") {
+		response.ErrorJSON(w, http.StatusInternalServerError, "GMAIL_CALLBACK_FAILED", "Gmail authorization could not be completed")
+		return
 	}
+
+	frontend.Path = "/dashboard/connections"
+	query := frontend.Query()
+	query.Set("gmail", result)
+	if reason != "" {
+		query.Set("reason", reason)
+	}
+	frontend.RawQuery = query.Encode()
+	http.Redirect(w, r, frontend.String(), http.StatusSeeOther)
 }
