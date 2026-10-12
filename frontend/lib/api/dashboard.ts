@@ -61,3 +61,9 @@ export async function createTask(
     body: JSON.stringify(payload),
   });
 }
+
+export function deleteTask(taskId: string) {
+  return apiRequest<void>(`/tasks/${taskId}`, {
+    method: "DELETE",
+  });
+}

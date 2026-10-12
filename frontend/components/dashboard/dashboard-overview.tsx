@@ -8,27 +8,21 @@ import {
   AlertCircle,
   CheckCircle2,
   ChevronDown,
-  CircleHelp,
   Clock3,
   Command,
-  LayoutDashboard,
   Layers3,
   ListTodo,
-  LogOut,
   Menu,
   Moon,
   Plus,
   RefreshCw,
-  Settings2,
   ShieldCheck,
   Sun,
   Workflow,
-  X,
 } from "lucide-react";
 
 import { ApiError } from "@/lib/api/client";
 import {
-  createTask,
   getCurrentUser,
   getQueues,
   getTasks,
@@ -41,6 +35,7 @@ import { logoutUser } from "@/lib/auth/session";
 import { Button } from "@/components/ui/button";
 
 import Sidebar from "@/components/dashboard/sidebar";
+import TaskCreationWizard from "@/components/tasks/task-creation-wizard";
 
 type DashboardData = {
   user: CurrentUser | null;
@@ -118,7 +113,7 @@ function StatCard({
   accent: string;
 }) {
   return (
-    <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/[0.02] transition-shadow hover:shadow-md">
+    <div className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/2 transition-shadow hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
@@ -159,13 +154,6 @@ export default function DashboardOverview() {
   const [errors, setErrors] = useState<string[]>([]);
 
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
-  const [creatingTask, setCreatingTask] = useState(false);
-  const [createTaskError, setCreateTaskError] = useState("");
-
-  const [taskName, setTaskName] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
-  const [taskTimeout, setTaskTimeout] = useState("30");
-  const [taskRetries, setTaskRetries] = useState("2");
 
   const loadDashboard = useCallback(async () => {
     if (!getAccessToken()) {
@@ -350,65 +338,6 @@ export default function DashboardOverview() {
 
   const firstName = data.user?.full_name?.trim().split(/\s+/)[0];
 
-  async function handleCreateTask(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setCreateTaskError("");
-
-    const name = taskName.trim();
-
-    if (!name) {
-      setCreateTaskError("Task name is required.");
-      return;
-    }
-
-    const timeout = Number(taskTimeout);
-    const retries = Number(taskRetries);
-
-    if (!Number.isInteger(timeout) || timeout < 1) {
-      setCreateTaskError("Timeout must be a positive whole number.");
-      return;
-    }
-
-    if (!Number.isInteger(retries) || retries < 0) {
-      setCreateTaskError("Retries must be zero or a positive whole number.");
-      return;
-    }
-
-    setCreatingTask(true);
-
-    try {
-      const response = await createTask({
-        name,
-        description: taskDescription.trim() || null,
-        timeout_seconds: timeout,
-        max_retries: retries,
-      });
-
-      setData((previous) => ({
-        ...previous,
-        tasks: [
-          response.data,
-          ...previous.tasks.filter((task) => task.id !== response.data.id),
-        ],
-      }));
-
-      setTaskName("");
-      setTaskDescription("");
-      setTaskTimeout("30");
-      setTaskRetries("2");
-      setCreateTaskOpen(false);
-      setCreateTaskError("");
-    } catch (error) {
-      setCreateTaskError(
-        error instanceof Error
-          ? error.message
-          : "Could not create the task. Please try again.",
-      );
-    } finally {
-      setCreatingTask(false);
-    }
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <Sidebar
@@ -420,8 +349,8 @@ export default function DashboardOverview() {
         activePage="overview"
       />
 
-      <div className="min-h-screen lg:pl-[264px]">
-        <header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-border/80 bg-background/90 px-4 backdrop-blur-xl sm:px-6 lg:px-9">
+      <div className="min-h-screen lg:pl-66">
+        <header className="sticky top-0 z-30 flex h-19 items-center justify-between border-b border-border/80 bg-background/90 px-4 backdrop-blur-xl sm:px-6 lg:px-9">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -496,8 +425,8 @@ export default function DashboardOverview() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 py-7 sm:px-6 sm:py-9 lg:px-9">
-          <section className="relative overflow-hidden rounded-3xl border border-primary/15 bg-gradient-to-br from-primary/[0.09] via-card to-card p-6 sm:p-8 lg:p-9">
+        <main className="mx-auto max-w-360 px-4 py-7 sm:px-6 sm:py-9 lg:px-9">
+          <section className="relative overflow-hidden rounded-3xl border border-primary/15 bg-linear-to-br from-primary/9 via-card to-card p-6 sm:p-8 lg:p-9">
             <div className="pointer-events-none absolute -right-10 -top-20 size-64 rounded-full bg-primary/10 blur-3xl" />
             <div className="pointer-events-none absolute -bottom-24 right-1/4 size-48 rounded-full bg-violet-400/10 blur-3xl" />
 
@@ -524,7 +453,6 @@ export default function DashboardOverview() {
                   <Button
                     type="button"
                     onClick={() => {
-                      setCreateTaskError("");
                       setCreateTaskOpen(true);
                     }}
                     className="gap-2"
@@ -533,9 +461,6 @@ export default function DashboardOverview() {
                     Create a task
                   </Button>
 
-                  <span className="text-xs text-muted-foreground">
-                    Task creation UI is coming next.
-                  </span>
                 </div>
               </div>
 
@@ -636,7 +561,7 @@ export default function DashboardOverview() {
           </section>
 
           <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.8fr)]">
-            <section className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm shadow-black/[0.02]">
+            <section className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm shadow-black/2">
               <div className="flex items-center justify-between border-b border-border/70 px-5 py-5 sm:px-6">
                 <div>
                   <h3 className="font-semibold tracking-tight">
@@ -683,7 +608,7 @@ export default function DashboardOverview() {
                       className="flex items-center gap-3 px-5 py-4 transition-colors hover:bg-muted/30 sm:px-6"
                     >
                       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
-                        <Workflow className="size-[18px]" />
+                        <Workflow className="size-4.5" />
                       </div>
 
                       <div className="min-w-0 flex-1">
@@ -714,7 +639,7 @@ export default function DashboardOverview() {
             </section>
 
             <div className="space-y-6">
-              <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/[0.02] sm:p-6">
+              <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/2 sm:p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-semibold tracking-tight">
@@ -775,7 +700,7 @@ export default function DashboardOverview() {
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/[0.02] sm:p-6">
+              <section className="rounded-2xl border border-border/80 bg-card p-5 shadow-sm shadow-black/2 sm:p-6">
                 <div className="flex items-center gap-3">
                   <div className="flex size-10 items-center justify-center rounded-xl bg-violet-500/10 text-violet-600 dark:text-violet-400">
                     <Layers3 className="size-5" />
@@ -849,157 +774,14 @@ export default function DashboardOverview() {
             </p>
           </footer>
           {createTaskOpen && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget && !creatingTask) {
-                  setCreateTaskOpen(false);
-                }
+            <TaskCreationWizard
+              queues={data.queues}
+              onClose={() => setCreateTaskOpen(false)}
+              onCreated={() => {
+                setCreateTaskOpen(false);
+                void loadDashboard();
               }}
-            >
-              <section
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="create-task-title"
-                className="my-auto w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-2xl"
-              >
-                <div className="mb-6 flex items-start justify-between gap-4">
-                  <div>
-                    <h2
-                      id="create-task-title"
-                      className="text-xl font-semibold tracking-tight"
-                    >
-                      Create a task
-                    </h2>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Configure a task for your automation queue.
-                    </p>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Close dialog"
-                    disabled={creatingTask}
-                    onClick={() => setCreateTaskOpen(false)}
-                  >
-                    <X className="size-4" />
-                  </Button>
-                </div>
-
-                <form onSubmit={handleCreateTask} className="space-y-5">
-                  <div className="space-y-2">
-                    <label htmlFor="task-name" className="text-sm font-medium">
-                      Task name <span className="text-destructive">*</span>
-                    </label>
-                    <input
-                      id="task-name"
-                      autoFocus
-                      required
-                      maxLength={120}
-                      value={taskName}
-                      onChange={(event) => setTaskName(event.target.value)}
-                      placeholder="e.g. Generate daily report"
-                      className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <label
-                      htmlFor="task-description"
-                      className="text-sm font-medium"
-                    >
-                      Description
-                    </label>
-                    <textarea
-                      id="task-description"
-                      rows={3}
-                      maxLength={1000}
-                      value={taskDescription}
-                      onChange={(event) =>
-                        setTaskDescription(event.target.value)
-                      }
-                      placeholder="What should this task accomplish?"
-                      className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <label
-                        htmlFor="task-timeout"
-                        className="text-sm font-medium"
-                      >
-                        Timeout (seconds)
-                      </label>
-                      <input
-                        id="task-timeout"
-                        type="number"
-                        min={1}
-                        step={1}
-                        required
-                        value={taskTimeout}
-                        onChange={(event) => setTaskTimeout(event.target.value)}
-                        className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label
-                        htmlFor="task-retries"
-                        className="text-sm font-medium"
-                      >
-                        Maximum retries
-                      </label>
-                      <input
-                        id="task-retries"
-                        type="number"
-                        min={0}
-                        step={1}
-                        required
-                        value={taskRetries}
-                        onChange={(event) => setTaskRetries(event.target.value)}
-                        className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus-visible:ring-2 focus-visible:ring-ring"
-                      />
-                    </div>
-                  </div>
-
-                  {createTaskError && (
-                    <div
-                      role="alert"
-                      className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
-                    >
-                      {createTaskError}
-                    </div>
-                  )}
-
-                  <div className="flex justify-end gap-3 border-t border-border pt-4">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={creatingTask}
-                      onClick={() => setCreateTaskOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-
-                    <Button
-                      type="submit"
-                      disabled={
-                        creatingTask
-                      }
-                      className="gap-2"
-                    >
-                      {creatingTask && (
-                        <RefreshCw className="size-4 animate-spin" />
-                      )}
-                      {creatingTask ? "Creating..." : "Create task"}
-                    </Button>
-                  </div>
-                </form>
-              </section>
-            </div>
+            />
           )}
         </main>
       </div>
