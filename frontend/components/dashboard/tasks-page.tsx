@@ -1,25 +1,41 @@
+
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
+  Archive,
+  Check,
   Clock3,
   ListTodo,
+  Pause,
+  Pencil,
+  Play,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   Workflow,
+  X,
 } from "lucide-react";
 
 import Sidebar from "@/components/dashboard/sidebar";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
 import {
+  deleteTask,
   getCurrentUser,
   getQueues,
   getTasks,
+  updateTask,
   type CurrentUser,
   type Queue,
   type Task,
@@ -74,9 +90,18 @@ export default function TasksPage() {
   const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
+  const [statusFilter, setStatusFilter] =
+    useState<StatusFilter>("All");
 
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTimeout, setEditTimeout] = useState("300");
+  const [editRetries, setEditRetries] = useState("0");
+  const [savingTask, setSavingTask] = useState(false);
+  const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
 
   const loadData = useCallback(
     async (showRefresh = false) => {
@@ -96,7 +121,11 @@ export default function TasksPage() {
 
       try {
         const [userResult, tasksResult, queuesResult] =
-          await Promise.allSettled([getCurrentUser(), getTasks(), getQueues()]);
+          await Promise.allSettled([
+            getCurrentUser(),
+            getTasks(),
+            getQueues(),
+          ]);
 
         const results = [userResult, tasksResult, queuesResult];
 
@@ -160,10 +189,150 @@ export default function TasksPage() {
     try {
       await logoutUser();
     } catch {
-      // Clear the local session even if the logout request fails.
+      // Clear the local session even if logout fails.
     } finally {
       clearTokens();
       router.replace("/login");
+    }
+  }
+
+  function openEditTask(task: Task) {
+    setError("");
+    setEditingTask(task);
+    setEditName(task.name);
+    setEditDescription(task.description ?? "");
+    setEditTimeout(String(task.timeout_seconds));
+    setEditRetries(String(task.max_retries));
+  }
+
+  async function changeTaskStatus(
+    task: Task,
+    status: TaskStatus,
+  ) {
+    if (busyTaskId || savingTask) return;
+
+    setBusyTaskId(task.id);
+    setError("");
+
+    try {
+      const result = await updateTask(task.id, {
+        name: task.name,
+        description: task.description ?? null,
+        status,
+        timeout_seconds: task.timeout_seconds,
+        max_retries: task.max_retries,
+      });
+
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === task.id ? result.data : item,
+        ),
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not update the task.",
+      );
+    } finally {
+      setBusyTaskId(null);
+    }
+  }
+
+  async function saveTaskEdits(
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+
+    if (!editingTask || savingTask || busyTaskId) return;
+
+    const timeout = Number(editTimeout);
+    const retries = Number(editRetries);
+    const name = editName.trim();
+
+    if (!name) {
+      setError("Task name is required.");
+      return;
+    }
+
+    if (
+      !Number.isSafeInteger(timeout) ||
+      timeout <= 0
+    ) {
+      setError(
+        "Timeout must be a positive whole number of seconds.",
+      );
+      return;
+    }
+
+    if (
+      !Number.isSafeInteger(retries) ||
+      retries < 0
+    ) {
+      setError("Maximum retries must be a non-negative whole number.");
+      return;
+    }
+
+    setSavingTask(true);
+    setError("");
+
+    try {
+      const result = await updateTask(editingTask.id, {
+        name,
+        description: editDescription.trim() || null,
+        status: editingTask.status,
+        timeout_seconds: timeout,
+        max_retries: retries,
+      });
+
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === editingTask.id ? result.data : item,
+        ),
+      );
+
+      setEditingTask(null);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not save your changes.",
+      );
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
+  async function handleDeleteTask(task: Task) {
+    if (busyTaskId || savingTask) return;
+
+    const confirmed = window.confirm(
+      `Delete "${task.name}"? This action cannot be undone.`,
+    );
+
+    if (!confirmed) return;
+
+    setBusyTaskId(task.id);
+    setError("");
+
+    try {
+      await deleteTask(task.id);
+
+      setTasks((current) =>
+        current.filter((item) => item.id !== task.id),
+      );
+
+      if (editingTask?.id === task.id) {
+        setEditingTask(null);
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not delete the task.",
+      );
+    } finally {
+      setBusyTaskId(null);
     }
   }
 
@@ -172,7 +341,10 @@ export default function TasksPage() {
 
     return [...tasks]
       .filter((task) => {
-        if (statusFilter !== "All" && task.status !== statusFilter) {
+        if (
+          statusFilter !== "All" &&
+          task.status !== statusFilter
+        ) {
           return false;
         }
 
@@ -185,12 +357,19 @@ export default function TasksPage() {
       })
       .sort(
         (a, b) =>
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+          new Date(b.updated_at).getTime() -
+          new Date(a.updated_at).getTime(),
       );
   }, [tasks, search, statusFilter]);
 
-  const activeCount = tasks.filter((task) => task.status === "Active").length;
-  const pausedCount = tasks.filter((task) => task.status === "Paused").length;
+  const activeCount = tasks.filter(
+    (task) => task.status === "Active",
+  ).length;
+
+  const pausedCount = tasks.filter(
+    (task) => task.status === "Paused",
+  ).length;
+
   const archivedCount = tasks.filter(
     (task) => task.status === "Archived",
   ).length;
@@ -239,7 +418,7 @@ export default function TasksPage() {
               variant="outline"
               size="sm"
               onClick={() => void loadData(true)}
-              disabled={loading || refreshing}
+              disabled={loading || refreshing || Boolean(busyTaskId) || savingTask}
               className="gap-2"
             >
               <RefreshCw
@@ -251,9 +430,7 @@ export default function TasksPage() {
             <Button
               type="button"
               size="sm"
-              onClick={() => {
-                setCreateTaskOpen(true);
-              }}
+              onClick={() => setCreateTaskOpen(true)}
               className="gap-2"
             >
               <Plus className="size-4" />
@@ -274,8 +451,7 @@ export default function TasksPage() {
                   Your tasks
                 </h1>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                  Find, organize, and configure the tasks in your automation
-                  workspace.
+                  Manage task settings and control when your automations run.
                 </p>
               </div>
 
@@ -286,21 +462,9 @@ export default function TasksPage() {
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               {[
-                {
-                  label: "Total tasks",
-                  value: tasks.length,
-                  icon: ListTodo,
-                },
-                {
-                  label: "Active",
-                  value: activeCount,
-                  icon: Workflow,
-                },
-                {
-                  label: "Paused",
-                  value: pausedCount,
-                  icon: Clock3,
-                },
+                { label: "Total tasks", value: tasks.length, icon: ListTodo },
+                { label: "Active", value: activeCount, icon: Workflow },
+                { label: "Paused", value: pausedCount, icon: Clock3 },
               ].map(({ label, value, icon: Icon }) => (
                 <div
                   key={label}
@@ -444,9 +608,7 @@ export default function TasksPage() {
             ) : (
               <div className="divide-y divide-border/70">
                 {filteredTasks.map((task) => {
-                  const queue = queues.find(
-                    (item) => item.id === task.queue_id,
-                  );
+                  const busy = busyTaskId === task.id;
 
                   return (
                     <article
@@ -464,6 +626,11 @@ export default function TasksPage() {
                               {task.name}
                             </h3>
                             <StatusBadge status={task.status} />
+                            {busy && (
+                              <span className="text-xs text-muted-foreground">
+                                Updating…
+                              </span>
+                            )}
                           </div>
 
                           <p className="mt-1 wrap-break-word text-sm leading-5 text-muted-foreground">
@@ -471,12 +638,6 @@ export default function TasksPage() {
                           </p>
 
                           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                            <span>
-                              Queue:{" "}
-                              <span className="font-medium text-foreground">
-                                {queue?.name ?? "Unknown queue"}
-                              </span>
-                            </span>
                             <span>Timeout: {task.timeout_seconds}s</span>
                             <span>Retries: {task.max_retries}</span>
                           </div>
@@ -485,6 +646,77 @@ export default function TasksPage() {
                             Updated {formatDate(task.updated_at)}
                           </p>
                         </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 md:shrink-0">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditTask(task)}
+                          disabled={Boolean(busyTaskId) || savingTask}
+                          className="gap-1.5"
+                        >
+                          <Pencil className="size-3.5" />
+                          Edit
+                        </Button>
+
+                        {task.status !== "Archived" && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={Boolean(busyTaskId) || savingTask}
+                            onClick={() =>
+                              void changeTaskStatus(
+                                task,
+                                task.status === "Active" ? "Paused" : "Active",
+                              )
+                            }
+                            className="gap-1.5"
+                          >
+                            {task.status === "Active" ? (
+                              <Pause className="size-3.5" />
+                            ) : (
+                              <Play className="size-3.5" />
+                            )}
+                            {task.status === "Active" ? "Pause" : "Resume"}
+                          </Button>
+                        )}
+
+                        {task.status !== "Archived" && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={Boolean(busyTaskId) || savingTask}
+                            onClick={() => {
+                              const confirmed = window.confirm(
+                                `Archive "${task.name}"? The scheduler will no longer dispatch it.`,
+                              );
+
+                              if (confirmed) {
+                                void changeTaskStatus(task, "Archived");
+                              }
+                            }}
+                            className="gap-1.5"
+                          >
+                            <Archive className="size-3.5" />
+                            Archive
+                          </Button>
+                        )}
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={Boolean(busyTaskId) || savingTask}
+                          onClick={() => void handleDeleteTask(task)}
+                          className="gap-1.5 text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </Button>
                       </div>
                     </article>
                   );
@@ -512,6 +744,153 @@ export default function TasksPage() {
             void loadData(true);
           }}
         />
+      )}
+
+      {editingTask && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !savingTask
+            ) {
+              setEditingTask(null);
+            }
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-task-title"
+            className="w-full max-w-lg rounded-2xl border border-border bg-card p-5 shadow-xl sm:p-7"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2
+                  id="edit-task-title"
+                  className="text-lg font-semibold"
+                >
+                  Edit task
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Update this task’s settings.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Close edit dialog"
+                disabled={savingTask}
+                onClick={() => setEditingTask(null)}
+                className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <form onSubmit={saveTaskEdits} className="mt-6 space-y-4">
+              <div>
+                <label
+                  htmlFor="edit-task-name"
+                  className="mb-1.5 block text-sm font-medium"
+                >
+                  Task name
+                </label>
+                <input
+                  id="edit-task-name"
+                  required
+                  maxLength={150}
+                  value={editName}
+                  onChange={(event) => setEditName(event.target.value)}
+                  className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor="edit-task-description"
+                  className="mb-1.5 block text-sm font-medium"
+                >
+                  Description
+                </label>
+                <textarea
+                  id="edit-task-description"
+                  rows={3}
+                  value={editDescription}
+                  onChange={(event) =>
+                    setEditDescription(event.target.value)
+                  }
+                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="edit-task-timeout"
+                    className="mb-1.5 block text-sm font-medium"
+                  >
+                    Timeout (seconds)
+                  </label>
+                  <input
+                    id="edit-task-timeout"
+                    type="number"
+                    min={1}
+                    step={1}
+                    required
+                    value={editTimeout}
+                    onChange={(event) => setEditTimeout(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="edit-task-retries"
+                    className="mb-1.5 block text-sm font-medium"
+                  >
+                    Maximum retries
+                  </label>
+                  <input
+                    id="edit-task-retries"
+                    type="number"
+                    min={0}
+                    step={1}
+                    required
+                    value={editRetries}
+                    onChange={(event) => setEditRetries(event.target.value)}
+                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Current status: {editingTask.status}. Use the task card to
+                pause, resume, or archive it.
+              </p>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={savingTask}
+                  onClick={() => setEditingTask(null)}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  type="submit"
+                  disabled={savingTask || Boolean(busyTaskId)}
+                  className="gap-2"
+                >
+                  <Check className="size-4" />
+                  {savingTask ? "Saving…" : "Save changes"}
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
       )}
     </div>
   );

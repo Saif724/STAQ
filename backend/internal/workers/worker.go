@@ -112,10 +112,7 @@ func (w *Worker) Run(ctx context.Context) error {
 
 	recoveryConsumer := fmt.Sprintf("recovery-%d", time.Now().UnixNano())
 
-	go w.runPendingJobRecovery(
-		ctx,
-		recoveryConsumer,
-	)
+	go w.runPendingJobRecovery(ctx, recoveryConsumer)
 
 	var wg sync.WaitGroup
 
@@ -125,10 +122,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		go func(workerID int) {
 			defer wg.Done()
 
-			consumer := fmt.Sprintf(
-				"worker-%d",
-				workerID,
-			)
+			consumer := fmt.Sprintf("worker-%d", workerID)
 
 			w.logger.Info().
 				Int("worker_id", workerID).
@@ -144,7 +138,6 @@ func (w *Worker) Run(ctx context.Context) error {
 						w.logger.Info().
 							Int("worker_id", workerID).
 							Msg("worker stopped")
-
 						return
 					}
 
@@ -174,7 +167,6 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.logger.Info().Msg("worker pool stopped")
 
 	return ctx.Err()
-
 }
 
 func (w *Worker) runPendingJobRecovery(
@@ -190,19 +182,13 @@ func (w *Worker) runPendingJobRecovery(
 			return
 
 		case <-ticker.C:
-			w.recoverPendingJobs(
-				ctx,
-				consumer,
-			)
+			w.recoverPendingJobs(ctx, consumer)
 		}
 	}
 }
 
 func (w *Worker) processOne(ctx context.Context, consumer string) error {
-	messageID, job, err := w.broker.ReadTaskJob(
-		ctx,
-		consumer,
-	)
+	messageID, job, err := w.broker.ReadTaskJob(ctx, consumer)
 	if err != nil {
 		return err
 	}
@@ -211,10 +197,7 @@ func (w *Worker) processOne(ctx context.Context, consumer string) error {
 		return err
 	}
 
-	if err := w.broker.AcknowledgeTaskJob(
-		ctx,
-		messageID,
-	); err != nil {
+	if err := w.broker.AcknowledgeTaskJob(ctx, messageID); err != nil {
 		return err
 	}
 
@@ -245,7 +228,6 @@ func (w *Worker) executeJob(
 			Str("task_id", task.ID).
 			Str("status", task.Status).
 			Msg("skipping inactive task")
-
 		return nil
 	}
 
@@ -262,12 +244,11 @@ func (w *Worker) executeJob(
 			job.TriggerID,
 			job.ScheduledAt,
 		)
-
 		if findErr != nil {
 			return fmt.Errorf("failed to find existing execution: %w", findErr)
 		}
 		if execution == nil {
-			return fmt.Errorf("execution already exists but could not be found")
+			return errors.New("execution already exists but could not be found")
 		}
 
 		if execution.Status != executions.StatusRunning {
@@ -278,14 +259,10 @@ func (w *Worker) executeJob(
 				Time("scheduled_at", job.ScheduledAt).
 				Str("status", execution.Status).
 				Msg("duplicate scheduled job ignored")
-
 			return nil
 		}
 
-		reclaimed, reclaimErr := w.executionService.Reclaim(
-			ctx,
-			execution,
-		)
+		reclaimed, reclaimErr := w.executionService.Reclaim(ctx, execution)
 		if reclaimErr != nil {
 			return fmt.Errorf("failed to reclaim existing execution: %w", reclaimErr)
 		}
@@ -296,7 +273,6 @@ func (w *Worker) executeJob(
 				Str("task_id", task.ID).
 				Str("trigger_id", job.TriggerID).
 				Msg("existing execution is still active; skipping")
-
 			return nil
 		}
 
@@ -312,16 +288,8 @@ func (w *Worker) executeJob(
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	defer heartbeatCancel()
 
-	go w.runExecutionHeartbeat(
-		heartbeatCtx,
-		execution.ID,
-	)
-
-	go w.runTaskJobRenewal(
-		heartbeatCtx,
-		messageID,
-		consumer,
-	)
+	go w.runExecutionHeartbeat(heartbeatCtx, execution.ID)
+	go w.runTaskJobRenewal(heartbeatCtx, messageID, consumer)
 
 	w.logger.Info().
 		Str("execution_id", execution.ID).
@@ -341,11 +309,7 @@ func (w *Worker) executeJob(
 			Msg("failed to create execution log")
 	}
 
-	if err := w.executeActions(
-		ctx,
-		task,
-		execution,
-	); err != nil {
+	if err := w.executeActions(ctx, task, execution); err != nil {
 		var completionErr error
 
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -371,13 +335,12 @@ func (w *Worker) executeJob(
 			Str("execution_id", execution.ID).
 			Msg("execution failed")
 
+		// The execution has been recorded as failed/timed out.
+		// Return nil so the completed job can be acknowledged.
 		return nil
 	}
 
-	if err := w.executionService.CompleteSuccess(
-		ctx,
-		execution,
-	); err != nil {
+	if err := w.executionService.CompleteSuccess(ctx, execution); err != nil {
 		return fmt.Errorf("failed to complete execution: %w", err)
 	}
 
@@ -415,11 +378,7 @@ func (w *Worker) runTaskJobRenewal(
 			return
 
 		case <-ticker.C:
-			if err := w.broker.RenewTaskJob(
-				ctx,
-				messageID,
-				consumer,
-			); err != nil {
+			if err := w.broker.RenewTaskJob(ctx, messageID, consumer); err != nil {
 				if errors.Is(err, context.Canceled) ||
 					errors.Is(err, context.DeadlineExceeded) {
 					return
@@ -448,10 +407,7 @@ func (w *Worker) runExecutionHeartbeat(
 			return
 
 		case <-ticker.C:
-			if err := w.executionService.Heartbeat(
-				ctx,
-				executionID,
-			); err != nil {
+			if err := w.executionService.Heartbeat(ctx, executionID); err != nil {
 				if errors.Is(err, context.Canceled) ||
 					errors.Is(err, context.DeadlineExceeded) {
 					return
@@ -476,6 +432,11 @@ func (w *Worker) executeActions(
 		return fmt.Errorf("failed to load actions: %w", err)
 	}
 
+	// Preserve the first failure even when ContinueOnFailure lets
+	// subsequent actions run. This ensures the overall execution cannot
+	// be marked successful if any action failed.
+	var firstActionErr error
+
 	for _, action := range actionsList {
 		actionContext := actions.ExecutionContext{
 			TaskID:   task.ID,
@@ -485,9 +446,17 @@ func (w *Worker) executeActions(
 
 		executor, err := w.registry.Get(action.ActionType)
 		if err != nil {
-			actionErr := fmt.Errorf("executor not found for action type %s: %w", action.ActionType, err)
+			actionErr := fmt.Errorf(
+				"executor not found for action type %s: %w",
+				action.ActionType,
+				err,
+			)
 
 			w.logActionError(ctx, execution.ID, actionErr)
+
+			if firstActionErr == nil {
+				firstActionErr = actionErr
+			}
 
 			if !action.ContinueOnFailure {
 				return actionErr
@@ -497,7 +466,6 @@ func (w *Worker) executeActions(
 		}
 
 		var result *actions.ExecutionResult
-
 		actionRetryCount := 0
 
 		for {
@@ -519,7 +487,6 @@ func (w *Worker) executeActions(
 			}
 
 			actionErr := fmt.Errorf("action %s failed: %w", action.ID, err)
-
 			result = nil
 
 			if ctx.Err() != nil {
@@ -529,6 +496,10 @@ func (w *Worker) executeActions(
 			if errors.Is(err, context.DeadlineExceeded) ||
 				errors.Is(err, context.Canceled) {
 				w.logActionError(ctx, execution.ID, actionErr)
+
+				if firstActionErr == nil {
+					firstActionErr = actionErr
+				}
 
 				if !action.ContinueOnFailure {
 					return actionErr
@@ -540,6 +511,10 @@ func (w *Worker) executeActions(
 			if !actions.IsRetryable(err) {
 				w.logActionError(ctx, execution.ID, actionErr)
 
+				if firstActionErr == nil {
+					firstActionErr = actionErr
+				}
+
 				if !action.ContinueOnFailure {
 					return actionErr
 				}
@@ -550,6 +525,10 @@ func (w *Worker) executeActions(
 			if actionRetryCount >= task.MaxRetries {
 				w.logActionError(ctx, execution.ID, actionErr)
 
+				if firstActionErr == nil {
+					firstActionErr = actionErr
+				}
+
 				if !action.ContinueOnFailure {
 					return actionErr
 				}
@@ -559,16 +538,18 @@ func (w *Worker) executeActions(
 
 			actionRetryCount++
 
-			if err := w.executionService.IncrementRetryCount(
-				ctx,
-				execution,
-			); err != nil {
+			if err := w.executionService.IncrementRetryCount(ctx, execution); err != nil {
 				return fmt.Errorf("failed to update retry count: %w", err)
 			}
 
 			delay := retryDelay(actionRetryCount)
-
-			retryMessage := fmt.Sprintf("action %s failed; retrying in %s (%d/%d)", action.ID, delay, actionRetryCount, task.MaxRetries)
+			retryMessage := fmt.Sprintf(
+				"action %s failed; retrying in %s (%d/%d)",
+				action.ID,
+				delay,
+				actionRetryCount,
+				task.MaxRetries,
+			)
 
 			if err := w.executionService.Log(
 				ctx,
@@ -588,7 +569,6 @@ func (w *Worker) executeActions(
 			case <-ctx.Done():
 				timer.Stop()
 				return ctx.Err()
-
 			case <-timer.C:
 			}
 		}
@@ -640,6 +620,12 @@ func (w *Worker) executeActions(
 			Msg("action executed")
 	}
 
+	// If any action failed, report that failure after giving later
+	// ContinueOnFailure actions their opportunity to execute.
+	if firstActionErr != nil {
+		return firstActionErr
+	}
+
 	return nil
 }
 
@@ -683,15 +669,11 @@ func (w *Worker) recoverPendingJobs(
 	ctx context.Context,
 	consumer string,
 ) {
-	messages, err := w.broker.ClaimStaleTaskJobs(
-		ctx,
-		consumer,
-	)
+	messages, err := w.broker.ClaimStaleTaskJobs(ctx, consumer)
 	if err != nil {
 		w.logger.Error().
 			Err(err).
 			Msg("failed to claim stale task jobs")
-
 		return
 	}
 
@@ -701,22 +683,18 @@ func (w *Worker) recoverPendingJobs(
 			w.logger.Error().
 				Str("message_id", message.ID).
 				Msg("claimed task job has invalid payload")
-
 			continue
 		}
 
 		var job broker.TaskJob
-		if err := json.Unmarshal(
-			[]byte(rawJob),
-			&job,
-		); err != nil {
+		if err := json.Unmarshal([]byte(rawJob), &job); err != nil {
 			w.logger.Error().
 				Err(err).
 				Str("message_id", message.ID).
 				Msg("failed to decode claimed task job")
-
 			continue
 		}
+
 		w.logger.Warn().
 			Str("message_id", message.ID).
 			Str("consumer", consumer).
@@ -729,14 +707,10 @@ func (w *Worker) recoverPendingJobs(
 				Err(err).
 				Str("message_id", message.ID).
 				Msg("failed to execute claimed task job")
-
 			continue
 		}
 
-		if err := w.broker.AcknowledgeTaskJob(
-			ctx,
-			message.ID,
-		); err != nil {
+		if err := w.broker.AcknowledgeTaskJob(ctx, message.ID); err != nil {
 			w.logger.Error().
 				Err(err).
 				Str("message_id", message.ID).
@@ -747,12 +721,15 @@ func (w *Worker) recoverPendingJobs(
 
 func errorBackoff(consecutive int) time.Duration {
 	delay := 5 * time.Second
+
 	for i := 1; i < consecutive && delay < 5*time.Minute; i++ {
 		delay *= 2
 	}
+
 	if delay > 5*time.Minute {
 		delay = 5 * time.Minute
 	}
+
 	return delay
 }
 
@@ -772,5 +749,6 @@ func workerConcurrency() int {
 	if v, err := strconv.Atoi(os.Getenv("WORKER_CONCURRENCY")); err == nil && v > 0 {
 		return v
 	}
+
 	return defaultConcurrency
 }

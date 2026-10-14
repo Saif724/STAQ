@@ -108,6 +108,22 @@ export async function createTask(
   });
 }
 
+
+export type UpdateTaskRequest = {
+  name: string;
+  description: string | null;
+  status: TaskStatus;
+  timeout_seconds: number;
+  max_retries: number;
+};
+
+export function updateTask(taskId: string, payload: UpdateTaskRequest) {
+  return apiRequest<{ data: Task }>(`/tasks/${taskId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function deleteTask(taskId: string) {
   return apiRequest<void>(`/tasks/${taskId}`, {
     method: "DELETE",
