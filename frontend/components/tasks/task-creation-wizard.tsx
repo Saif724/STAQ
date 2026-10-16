@@ -1,24 +1,44 @@
 "use client";
 
-import { useId, useState, useSyncExternalStore } from "react";
-import { AlertCircle, ArrowLeft, ArrowRight, Plus, Trash2, Workflow, X } from "lucide-react";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  Plus,
+  Trash2,
+  Workflow,
+  X,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import type { Queue } from "@/lib/api/dashboard";
+import { createTaskSetup } from "@/lib/api/task-setups";
+
 import {
+  createAction,
+  deleteAction,
+  getTaskActions,
+  getTaskTriggers,
+  updateAction,
+  updateTrigger,
   type ActionType,
+  type Trigger,
   type TriggerType,
 } from "@/lib/api/automation";
-import { createTaskSetup } from "@/lib/api/task-setups";
+
+import { updateTask, type Queue, type Task } from "@/lib/api/dashboard";
 
 type Props = {
   queues: Queue[];
   onClose: () => void;
   onCreated: () => void;
+  task?: Task;
 };
 
 type ActionDraft = {
   id: string;
+  persistedId?: string;
+  connectionId?: string;
   type: ActionType;
   continueOnFailure: boolean;
   message: string;
@@ -158,7 +178,11 @@ function TimezonePicker({
         aria-controls={listboxId}
         autoComplete="off"
         className={inputClass}
-        value={open ? query : `${formatTimezoneOffset(value, referenceDate)} · ${value}`}
+        value={
+          open
+            ? query
+            : `${formatTimezoneOffset(value, referenceDate)} · ${value}`
+        }
         placeholder="Search city or time zone"
         onFocus={() => {
           setQuery("");
@@ -181,7 +205,11 @@ function TimezonePicker({
           } else if (event.key === "ArrowUp") {
             event.preventDefault();
             setActiveIndex((index) => Math.max(index - 1, 0));
-          } else if (event.key === "Enter" && open && filteredTimezones[activeIndex]) {
+          } else if (
+            event.key === "Enter" &&
+            open &&
+            filteredTimezones[activeIndex]
+          ) {
             event.preventDefault();
             choose(filteredTimezones[activeIndex]);
           } else if (event.key === "Escape") {
@@ -204,7 +232,9 @@ function TimezonePicker({
                 role="option"
                 aria-selected={timeZone === value}
                 className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm ${
-                  index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+                  index === activeIndex
+                    ? "bg-accent text-accent-foreground"
+                    : "hover:bg-muted"
                 }`}
                 onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setActiveIndex(index)}
@@ -249,10 +279,7 @@ function dateTimePartsInTimezone(date: Date, timeZone: string) {
 }
 
 function dateTimeAfterOneHour(timeZone: string, timestamp: number) {
-  const parts = dateTimePartsInTimezone(
-    new Date(timestamp),
-    timeZone,
-  );
+  const parts = dateTimePartsInTimezone(new Date(timestamp), timeZone);
 
   return {
     date: `${parts.year}-${parts.month}-${parts.day}`,
@@ -278,8 +305,12 @@ function localDateTimeInTimezone(
   const minute = Number(minuteText);
 
   if (
-    month < 1 || month > 12 || day < 1 || day > 31 ||
-    hour > 23 || minute > 59
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour > 23 ||
+    minute > 59
   ) {
     return null;
   }
@@ -349,6 +380,9 @@ function configurationFor(action: ActionDraft): Record<string, unknown> {
     case "EMAIL":
       return {
         sender: action.sender,
+        ...(action.sender === "USER_GMAIL" && action.connectionId
+          ? { connection_id: action.connectionId }
+          : {}),
         to: action.to.trim(),
         subject: action.subject.trim(),
         body: action.body,
@@ -435,6 +469,7 @@ export default function TaskCreationWizard({
   queues,
   onClose,
   onCreated,
+  task,
 }: Props) {
   const mounted = useSyncExternalStore(
     subscribe,
@@ -442,10 +477,10 @@ export default function TaskCreationWizard({
     getServerSnapshot,
   );
   const browserTimezone = mounted ? getBrowserTimezone() : "UTC";
-  const timezoneOptions = mounted ? getTimezoneOptions(browserTimezone) : ["UTC"];
-  const [defaultStartTimestamp] = useState(
-    () => Date.now() + 60 * 60 * 1000,
-  );
+  const timezoneOptions = mounted
+    ? getTimezoneOptions(browserTimezone)
+    : ["UTC"];
+  const [defaultStartTimestamp] = useState(() => Date.now() + 60 * 60 * 1000);
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -464,6 +499,191 @@ export default function TaskCreationWizard({
 
   const [actions, setActions] = useState<ActionDraft[]>([newAction()]);
 
+  const [persistedTrigger, setPersistedTrigger] = useState<Trigger | null>(
+    null,
+  );
+  const [originalActionIds, setOriginalActionIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!task) return;
+
+    const editingTask = task;
+
+    let cancelled = false;
+
+    async function loadTaskForEditing() {
+      setSaving(true);
+      setError("");
+
+      try {
+        const [triggerResponse, actionResponse] = await Promise.all([
+          getTaskTriggers(editingTask.id),
+          getTaskActions(editingTask.id),
+        ]);
+
+        if (cancelled) return;
+
+        const triggers = triggerResponse.data;
+        const existingActions = actionResponse.data;
+
+        if (triggers.length === 0) {
+          throw new Error(
+            "This task has no trigger. Editing its schedule is not supported yet.",
+          );
+        }
+
+        if (triggers.length > 1) {
+          throw new Error(
+            "This task has multiple triggers. Editing is blocked to avoid accidentally changing the wrong schedule.",
+          );
+        }
+
+        const trigger = triggers[0];
+
+        setPersistedTrigger(trigger);
+        setOriginalActionIds(existingActions.map((action) => action.id));
+
+        setName(editingTask.name);
+        setDescription(editingTask.description ?? "");
+        setTimeoutSeconds(String(editingTask.timeout_seconds));
+        setMaxRetries(String(editingTask.max_retries));
+
+        setTriggerType(trigger.trigger_type);
+        setTimezoneOverride(trigger.timezone || "UTC");
+        setCronExpression(trigger.cron_expression ?? "0 9 * * *");
+
+        const scheduledAt = new Date(trigger.start_at);
+
+        if (Number.isNaN(scheduledAt.getTime())) {
+          throw new Error("The task has an invalid scheduled date.");
+        }
+
+        const scheduleParts = dateTimePartsInTimezone(
+          scheduledAt,
+          trigger.timezone || "UTC",
+        );
+
+        setStartDate(
+          `${scheduleParts.year}-${scheduleParts.month}-${scheduleParts.day}`,
+        );
+        setStartTime(`${scheduleParts.hour}:${scheduleParts.minute}`);
+
+        const decodeConfiguration = (
+          encoded: string,
+        ): Record<string, unknown> => {
+          try {
+            const binary = atob(encoded);
+            const bytes = Uint8Array.from(binary, (character) =>
+              character.charCodeAt(0),
+            );
+            const decoded = new TextDecoder().decode(bytes);
+            const parsed: unknown = JSON.parse(decoded);
+
+            if (
+              parsed === null ||
+              typeof parsed !== "object" ||
+              Array.isArray(parsed)
+            ) {
+              throw new Error("Expected a JSON object.");
+            }
+
+            return parsed as Record<string, unknown>;
+          } catch {
+            throw new Error(
+              "Could not read an action's saved configuration. No changes have been saved.",
+            );
+          }
+        };
+
+        const drafts: ActionDraft[] = existingActions
+          .slice()
+          .sort((a, b) => a.execution_order - b.execution_order)
+          .map((existingAction) => {
+            const config = decodeConfiguration(existingAction.configuration);
+            const draft = newAction();
+
+            draft.persistedId = existingAction.id;
+            draft.type = existingAction.action_type;
+            draft.continueOnFailure = existingAction.continue_on_failure;
+
+            if (draft.type === "REMINDER") {
+              draft.message =
+                typeof config.message === "string" ? config.message : "";
+            }
+
+            if (draft.type === "EMAIL") {
+              draft.sender =
+                config.sender === "USER_GMAIL" ? "USER_GMAIL" : "STAQ";
+              draft.connectionId =
+                typeof config.connection_id === "string"
+                  ? config.connection_id
+                  : undefined;
+              draft.to = typeof config.to === "string" ? config.to : "";
+              draft.subject =
+                typeof config.subject === "string" ? config.subject : "";
+              draft.body = typeof config.body === "string" ? config.body : "";
+            }
+
+            if (draft.type === "HTTP") {
+              const method = config.method;
+              draft.method =
+                method === "GET" ||
+                method === "POST" ||
+                method === "PUT" ||
+                method === "PATCH" ||
+                method === "DELETE"
+                  ? method
+                  : "POST";
+
+              draft.url = typeof config.url === "string" ? config.url : "";
+              draft.body = typeof config.body === "string" ? config.body : "";
+              draft.headers = JSON.stringify(
+                config.headers &&
+                  typeof config.headers === "object" &&
+                  !Array.isArray(config.headers)
+                  ? config.headers
+                  : {},
+                null,
+                2,
+              );
+            }
+
+            if (draft.type === "SHELL") {
+              draft.command =
+                typeof config.command === "string" ? config.command : "echo";
+              draft.args = Array.isArray(config.args)
+                ? config.args
+                    .filter(
+                      (value): value is string => typeof value === "string",
+                    )
+                    .join("\n")
+                : "";
+            }
+
+            return draft;
+          });
+
+        setActions(drafts.length > 0 ? drafts : [newAction()]);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load the task for editing.",
+          );
+        }
+      } finally {
+        if (!cancelled) setSaving(false);
+      }
+    }
+
+    void loadTaskForEditing();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [task]);
+
   const defaultQueue = queues.find(
     (queue) => queue.name === "default" && queue.is_active,
   );
@@ -476,13 +696,13 @@ export default function TaskCreationWizard({
     localDateTimeInTimezone(scheduleDate, scheduleTime, timezone) ??
     new Date(defaultStartTimestamp);
 
-  function updateAction(id: string, patch: Partial<ActionDraft>) {
+  function updateActionDraft(id: string, patch: Partial<ActionDraft>) {
     setActions((current) =>
       current.map((action) =>
         action.id === id ? { ...action, ...patch } : action,
       ),
     );
-  }
+}
 
   function validateStep(index: number): string | null {
     if (index === 0) {
@@ -517,10 +737,7 @@ export default function TaskCreationWizard({
         return "A one-time trigger must be scheduled in the future.";
       }
 
-      if (
-        triggerType === "CRON" &&
-        !cronExpression.trim()
-      ) {
+      if (triggerType === "CRON" && !cronExpression.trim()) {
         return "Enter a cron expression.";
       }
     }
@@ -554,11 +771,19 @@ export default function TaskCreationWizard({
 
     for (let index = 0; index < 3; index += 1) {
       const issue = validateStep(index);
+
       if (issue) {
         setStep(index);
         setError(issue);
         return;
       }
+    }
+
+    if (task && !persistedTrigger) {
+      setError(
+        "The existing trigger has not loaded. Please close and reopen the editor.",
+      );
+      return;
     }
 
     setSaving(true);
@@ -569,39 +794,99 @@ export default function TaskCreationWizard({
         scheduleTime,
         timezone.trim(),
       );
+
       if (!scheduledStart) {
         throw new Error(
           "The selected local time is not valid in this time zone.",
         );
       }
 
-      await createTaskSetup({
-        name: name.trim(),
-        description: description.trim() || null,
-        timeout_seconds: Number(timeoutSeconds),
-        max_retries: Number(maxRetries),
-        trigger_type: triggerType,
-        timezone: timezone.trim(),
-        start_at: scheduledStart.toISOString(),
-        ...(triggerType === "CRON"
-          ? { cron_expression: cronExpression.trim() }
-          : {}),
-        actions: actions.map((draft, index) => ({
-          action_type: draft.type,
-          execution_order: index + 1,
-          configuration: configurationFor(draft),
-          continue_on_failure: draft.continueOnFailure,
-        })),
-      });
+      const startAt = scheduledStart.toISOString();
+      const timeout = Number(timeoutSeconds);
+      const retries = Number(maxRetries);
+
+      if (!task) {
+        // CREATE MODE: keep the existing transactional setup endpoint.
+        await createTaskSetup({
+          name: name.trim(),
+          description: description.trim() || null,
+          timeout_seconds: timeout,
+          max_retries: retries,
+          trigger_type: triggerType,
+          timezone: timezone.trim(),
+          start_at: startAt,
+          ...(triggerType === "CRON"
+            ? { cron_expression: cronExpression.trim() }
+            : {}),
+          actions: actions.map((draft, index) => ({
+            action_type: draft.type,
+            execution_order: index + 1,
+            configuration: configurationFor(draft),
+            continue_on_failure: draft.continueOnFailure,
+          })),
+        });
+      } else {
+        // EDIT MODE: update existing records rather than creating a new task.
+        const trigger = persistedTrigger!;
+
+        await updateTask(task.id, {
+          name: name.trim(),
+          description: description.trim() || null,
+          status: task.status,
+          timeout_seconds: timeout,
+          max_retries: retries,
+        });
+
+        await updateTrigger(trigger.id, {
+          trigger_type: triggerType,
+          ...(triggerType === "CRON"
+            ? { cron_expression: cronExpression.trim() }
+            : { cron_expression: null }),
+          timezone: timezone.trim(),
+          start_at: startAt,
+          is_active: trigger.is_active,
+        });
+
+        const currentPersistedIds = new Set(
+          actions
+            .map((action) => action.persistedId)
+            .filter((id): id is string => Boolean(id)),
+        );
+
+        // Delete original actions removed from the editor.
+        for (const originalId of originalActionIds) {
+          if (!currentPersistedIds.has(originalId)) {
+            await deleteAction(originalId);
+          }
+        }
+
+        // Update existing actions and create newly added actions.
+        for (let index = 0; index < actions.length; index += 1) {
+          const draft = actions[index];
+
+          const payload = {
+            action_type: draft.type,
+            execution_order: index + 1,
+            configuration: configurationFor(draft),
+            continue_on_failure: draft.continueOnFailure,
+          };
+
+          if (draft.persistedId) {
+            await updateAction(draft.persistedId, payload);
+          } else {
+            await createAction({
+              task_id: task.id,
+              ...payload,
+            });
+          }
+        }
+      }
 
       onCreated();
-    } catch (caught) {
-      const message =
-        caught instanceof Error
-          ? caught.message
-          : "The workflow could not be created.";
-
-      setError(message);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not save the workflow.",
+      );
     } finally {
       setSaving(false);
     }
@@ -617,7 +902,7 @@ export default function TaskCreationWizard({
             className={textareaClass}
             value={action.message}
             onChange={(event) =>
-              updateAction(action.id, { message: event.target.value })
+              updateActionDraft(action.id, { message: event.target.value })
             }
             placeholder="Your report is ready."
           />
@@ -633,7 +918,7 @@ export default function TaskCreationWizard({
               className={inputClass}
               value={action.sender}
               onChange={(event) =>
-                updateAction(action.id, {
+                updateActionDraft(action.id, {
                   sender: event.target.value as ActionDraft["sender"],
                 })
               }
@@ -657,7 +942,7 @@ export default function TaskCreationWizard({
               type="email"
               value={action.to}
               onChange={(event) =>
-                updateAction(action.id, { to: event.target.value })
+                updateActionDraft(action.id, { to: event.target.value })
               }
               placeholder="recipient@example.com"
             />
@@ -668,7 +953,7 @@ export default function TaskCreationWizard({
               className={inputClass}
               value={action.subject}
               onChange={(event) =>
-                updateAction(action.id, { subject: event.target.value })
+                updateActionDraft(action.id, { subject: event.target.value })
               }
               placeholder="Your report is ready"
             />
@@ -680,7 +965,7 @@ export default function TaskCreationWizard({
               className={textareaClass}
               value={action.body}
               onChange={(event) =>
-                updateAction(action.id, { body: event.target.value })
+                updateActionDraft(action.id, { body: event.target.value })
               }
               placeholder="Write the email content..."
             />
@@ -697,7 +982,7 @@ export default function TaskCreationWizard({
               className={inputClass}
               value={action.method}
               onChange={(event) =>
-                updateAction(action.id, {
+                updateActionDraft(action.id, {
                   method: event.target.value as ActionDraft["method"],
                 })
               }
@@ -714,7 +999,7 @@ export default function TaskCreationWizard({
               type="url"
               value={action.url}
               onChange={(event) =>
-                updateAction(action.id, { url: event.target.value })
+                updateActionDraft(action.id, { url: event.target.value })
               }
               placeholder="https://example.com/webhook"
             />
@@ -726,7 +1011,7 @@ export default function TaskCreationWizard({
               className={`${textareaClass} font-mono text-xs`}
               value={action.headers}
               onChange={(event) =>
-                updateAction(action.id, { headers: event.target.value })
+                updateActionDraft(action.id, { headers: event.target.value })
               }
             />
           </Field>
@@ -737,7 +1022,7 @@ export default function TaskCreationWizard({
               className={`${textareaClass} font-mono text-xs`}
               value={action.body}
               onChange={(event) =>
-                updateAction(action.id, { body: event.target.value })
+                updateActionDraft(action.id, { body: event.target.value })
               }
               placeholder={'{"event":"task.completed"}'}
             />
@@ -753,7 +1038,7 @@ export default function TaskCreationWizard({
             className={inputClass}
             value={action.command}
             onChange={(event) =>
-              updateAction(action.id, { command: event.target.value })
+              updateActionDraft(action.id, { command: event.target.value })
             }
             placeholder="echo"
           />
@@ -765,15 +1050,15 @@ export default function TaskCreationWizard({
             className={`${textareaClass} font-mono text-xs`}
             value={action.args}
             onChange={(event) =>
-              updateAction(action.id, { args: event.target.value })
+              updateActionDraft(action.id, { args: event.target.value })
             }
             placeholder={"hello\nworld"}
           />
         </Field>
 
         <p className="text-xs text-muted-foreground">
-          Shell execution can be dangerous. Only configure commands permitted
-          by your backend worker&apos;s allowlist.
+          Shell execution can be dangerous. Only configure commands permitted by
+          your backend worker&apos;s allowlist.
         </p>
       </>
     );
@@ -801,7 +1086,7 @@ export default function TaskCreationWizard({
               </span>
             </div>
             <h2 id="wizard-title" className="mt-2 text-xl font-semibold">
-              Create an automation task
+              {task ? "Edit automation task" : "Create an automation task"}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Configure the task, its schedule, and the actions it should run.
@@ -1002,7 +1287,9 @@ export default function TaskCreationWizard({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setActions((current) => [...current, newAction()])}
+                  onClick={() =>
+                    setActions((current) => [...current, newAction()])
+                  }
                 >
                   <Plus className="mr-1 size-4" />
                   Add action
@@ -1015,9 +1302,7 @@ export default function TaskCreationWizard({
                   className="space-y-4 rounded-xl border border-border p-4"
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <h4 className="text-sm font-semibold">
-                      Step {index + 1}
-                    </h4>
+                    <h4 className="text-sm font-semibold">Step {index + 1}</h4>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1039,7 +1324,7 @@ export default function TaskCreationWizard({
                       className={inputClass}
                       value={action.type}
                       onChange={(event) =>
-                        updateAction(action.id, {
+                        updateActionDraft(action.id, {
                           type: event.target.value as ActionType,
                         })
                       }
@@ -1058,7 +1343,7 @@ export default function TaskCreationWizard({
                       type="checkbox"
                       checked={action.continueOnFailure}
                       onChange={(event) =>
-                        updateAction(action.id, {
+                        updateActionDraft(action.id, {
                           continueOnFailure: event.target.checked,
                         })
                       }
@@ -1101,12 +1386,14 @@ export default function TaskCreationWizard({
                         {index + 1}
                       </span>
                       <span>
-                        {{
-                          REMINDER: "Reminder",
-                          EMAIL: "Email",
-                          HTTP: "HTTP request",
-                          SHELL: "Shell command",
-                        }[action.type]}
+                        {
+                          {
+                            REMINDER: "Reminder",
+                            EMAIL: "Email",
+                            HTTP: "HTTP request",
+                            SHELL: "Shell command",
+                          }[action.type]
+                        }
                       </span>
                       {action.continueOnFailure && (
                         <span className="text-xs text-muted-foreground">
@@ -1119,8 +1406,8 @@ export default function TaskCreationWizard({
               </div>
 
               <p className="text-xs leading-5 text-muted-foreground">
-                Review your configuration before creating it. The task,
-                trigger, and actions are saved through separate API requests.
+                Review your configuration before creating it. The task, trigger,
+                and actions are saved through separate API requests.
               </p>
             </div>
           )}
@@ -1169,7 +1456,11 @@ export default function TaskCreationWizard({
                 disabled={saving || !defaultQueue}
                 onClick={() => void submitWorkflow()}
               >
-                {saving ? "Creating workflow…" : "Create workflow"}
+                {saving
+                  ? "Saving..."
+                  : task
+                    ? "Save changes"
+                    : "Create workflow"}
               </Button>
             )}
           </div>

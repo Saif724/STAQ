@@ -119,11 +119,6 @@ export default function TasksPage() {
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
 
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editTimeout, setEditTimeout] = useState("300");
-  const [editRetries, setEditRetries] = useState("0");
-  const [savingTask, setSavingTask] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{
     task: Task;
@@ -243,17 +238,8 @@ export default function TasksPage() {
     }
   }
 
-  function openEditTask(task: Task) {
-    setError("");
-    setEditingTask(task);
-    setEditName(task.name);
-    setEditDescription(task.description ?? "");
-    setEditTimeout(String(task.timeout_seconds));
-    setEditRetries(String(task.max_retries));
-  }
-
   async function changeTaskStatus(task: Task, status: TaskStatus) {
-    if (busyTaskId || savingTask) return;
+    if (busyTaskId) return;
 
     setBusyTaskId(task.id);
     setError("");
@@ -279,71 +265,26 @@ export default function TasksPage() {
     }
   }
 
-  async function saveTaskEdits(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function openEditTask(task: Task) {
+    if (busyTaskId) return;
 
-    if (!editingTask || savingTask || busyTaskId) return;
-
-    const timeout = Number(editTimeout);
-    const retries = Number(editRetries);
-    const name = editName.trim();
-
-    if (!name) {
-      setError("Task name is required.");
-      return;
-    }
-
-    if (!Number.isSafeInteger(timeout) || timeout <= 0) {
-      setError("Timeout must be a positive whole number of seconds.");
-      return;
-    }
-
-    if (!Number.isSafeInteger(retries) || retries < 0) {
-      setError("Maximum retries must be a non-negative whole number.");
-      return;
-    }
-
-    setSavingTask(true);
     setError("");
-
-    try {
-      const result = await updateTask(editingTask.id, {
-        name,
-        description: editDescription.trim() || null,
-        status: editingTask.status,
-        timeout_seconds: timeout,
-        max_retries: retries,
-      });
-
-      setTasks((current) =>
-        current.map((item) =>
-          item.id === editingTask.id ? result.data : item,
-        ),
-      );
-
-      setEditingTask(null);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Could not save your changes.",
-      );
-    } finally {
-      setSavingTask(false);
-    }
+    setEditingTask(task);
   }
 
   function handleDeleteTask(task: Task) {
-    if (busyTaskId || savingTask) return;
+    if (busyTaskId) return;
     setPendingAction({ task, action: "delete" });
   }
 
   function handleArchiveTask(task: Task) {
-    if (busyTaskId || savingTask) return;
+    if (busyTaskId) return;
     setPendingAction({ task, action: "archive" });
   }
 
   async function confirmDeleteTask() {
     if (!pendingAction || pendingAction.action !== "delete") return;
-    if (busyTaskId || savingTask) return;
+    if (busyTaskId) return;
 
     const task = pendingAction.task;
 
@@ -449,7 +390,7 @@ export default function TasksPage() {
               size="sm"
               onClick={() => void loadData(true)}
               disabled={
-                loading || refreshing || Boolean(busyTaskId) || savingTask
+                loading || refreshing || Boolean(busyTaskId)
               }
               className="gap-2"
             >
@@ -741,7 +682,7 @@ export default function TasksPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => openEditTask(task)}
-                          disabled={Boolean(busyTaskId) || savingTask}
+                          disabled={Boolean(busyTaskId)}
                           className="gap-1.5"
                         >
                           <Pencil className="size-3.5" />
@@ -753,7 +694,7 @@ export default function TasksPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={Boolean(busyTaskId) || savingTask}
+                            disabled={Boolean(busyTaskId)}
                             onClick={() =>
                               void changeTaskStatus(task, "Active")
                             }
@@ -767,7 +708,7 @@ export default function TasksPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={Boolean(busyTaskId) || savingTask}
+                            disabled={Boolean(busyTaskId)}
                             onClick={() =>
                               void changeTaskStatus(
                                 task,
@@ -790,7 +731,7 @@ export default function TasksPage() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={Boolean(busyTaskId) || savingTask}
+                            disabled={Boolean(busyTaskId)}
                             onClick={() => handleArchiveTask(task)}
                             className="gap-1.5"
                           >
@@ -803,7 +744,7 @@ export default function TasksPage() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={Boolean(busyTaskId) || savingTask}
+                          disabled={Boolean(busyTaskId)}
                           onClick={() => void handleDeleteTask(task)}
                           className="gap-1.5 text-destructive hover:text-destructive"
                         >
@@ -840,142 +781,15 @@ export default function TasksPage() {
       )}
 
       {editingTask && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !savingTask) {
-              setEditingTask(null);
-            }
+        <TaskCreationWizard
+          queues={queues}
+          task={editingTask}
+          onClose={() => setEditingTask(null)}
+          onCreated={() => {
+            setEditingTask(null);
+            void loadData(true);
           }}
-        >
-          <section
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="edit-task-title"
-            className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-xl sm:p-7"
-          >
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 id="edit-task-title" className="text-lg font-semibold">
-                  Edit task
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Update this task’s settings.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                aria-label="Close edit dialog"
-                disabled={savingTask}
-                onClick={() => setEditingTask(null)}
-                className="rounded-lg p-2 text-muted-foreground hover:bg-muted"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <form onSubmit={saveTaskEdits} className="mt-6 space-y-4">
-              <div>
-                <label
-                  htmlFor="edit-task-name"
-                  className="mb-1.5 block text-sm font-medium"
-                >
-                  Task name
-                </label>
-                <input
-                  id="edit-task-name"
-                  required
-                  maxLength={150}
-                  value={editName}
-                  onChange={(event) => setEditName(event.target.value)}
-                  className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="edit-task-description"
-                  className="mb-1.5 block text-sm font-medium"
-                >
-                  Description
-                </label>
-                <textarea
-                  id="edit-task-description"
-                  rows={3}
-                  value={editDescription}
-                  onChange={(event) => setEditDescription(event.target.value)}
-                  className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label
-                    htmlFor="edit-task-timeout"
-                    className="mb-1.5 block text-sm font-medium"
-                  >
-                    Timeout (seconds)
-                  </label>
-                  <input
-                    id="edit-task-timeout"
-                    type="number"
-                    min={1}
-                    step={1}
-                    required
-                    value={editTimeout}
-                    onChange={(event) => setEditTimeout(event.target.value)}
-                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="edit-task-retries"
-                    className="mb-1.5 block text-sm font-medium"
-                  >
-                    Maximum retries
-                  </label>
-                  <input
-                    id="edit-task-retries"
-                    type="number"
-                    min={0}
-                    step={1}
-                    required
-                    value={editRetries}
-                    onChange={(event) => setEditRetries(event.target.value)}
-                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  />
-                </div>
-              </div>
-
-              <p className="text-xs text-muted-foreground">
-                Current status: {editingTask.status}. Use the task card to
-                pause, resume, or archive it.
-              </p>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={savingTask}
-                  onClick={() => setEditingTask(null)}
-                >
-                  Cancel
-                </Button>
-
-                <Button
-                  type="submit"
-                  disabled={savingTask || Boolean(busyTaskId)}
-                  className="gap-2"
-                >
-                  <Check className="size-4" />
-                  {savingTask ? "Saving…" : "Save changes"}
-                </Button>
-              </div>
-            </form>
-          </section>
-        </div>
+        />
       )}
 
       {pendingAction && (
@@ -1039,7 +853,7 @@ export default function TasksPage() {
                 <button
                   type="button"
                   aria-label="Close confirmation"
-                  disabled={Boolean(busyTaskId) || savingTask}
+                  disabled={Boolean(busyTaskId)}
                   onClick={() => setPendingAction(null)}
                   className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
                 >
@@ -1052,7 +866,7 @@ export default function TasksPage() {
               <Button
                 type="button"
                 variant="outline"
-                disabled={Boolean(busyTaskId) || savingTask}
+                disabled={Boolean(busyTaskId)}
                 onClick={() => setPendingAction(null)}
                 className="w-full sm:w-auto"
               >
@@ -1061,7 +875,7 @@ export default function TasksPage() {
 
               <Button
                 type="button"
-                disabled={Boolean(busyTaskId) || savingTask}
+                disabled={Boolean(busyTaskId)}
                 onClick={() => {
                   if (pendingAction.action === "delete") {
                     void confirmDeleteTask();
