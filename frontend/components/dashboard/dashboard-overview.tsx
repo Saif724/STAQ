@@ -470,7 +470,7 @@ export default function DashboardOverview() {
               </span>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-5">
               <StatCard
                 label="Total tasks"
                 value={loading ? null : data.tasks.length}
@@ -514,7 +514,7 @@ export default function DashboardOverview() {
             </div>
           </section>
 
-          <div className="mt-8 grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.8fr)]">
+          <div className="mt-8 grid min-w-0 grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.8fr)]">
             <section className="min-w-0 overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm shadow-black/2">
               <div className="flex items-center justify-between border-b border-border/70 px-5 py-5 sm:px-6">
                 <div>
