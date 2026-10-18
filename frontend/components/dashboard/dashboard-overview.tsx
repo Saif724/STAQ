@@ -8,7 +8,7 @@ import {
   Activity,
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
+  // ChevronDown,
   Clock3,
   Command,
   ListTodo,
@@ -38,6 +38,7 @@ import { logoutUser } from "@/lib/auth/session";
 import { Button } from "@/components/ui/button";
 
 import Sidebar from "@/components/dashboard/sidebar";
+import NotificationBell from "@/components/notifications/notification-bell";
 import TaskCreationWizard from "@/components/tasks/task-creation-wizard";
 
 type DashboardData = {
@@ -275,10 +276,15 @@ export default function DashboardOverview() {
   const failedRuns = data.summary
     ? data.summary.failed_count + data.summary.timed_out_count
     : null;
+
+  const tasksUnavailable = errors.includes("Tasks could not be loaded.");
+  const summaryUnavailable = errors.includes(
+    "Execution summary could not be loaded.",
+  );
+
   const recentExecutions = data.summary?.recent_executions ?? [];
   const recentFailures = data.summary?.recent_failures ?? [];
   const upcomingExecutions = data.summary?.upcoming_executions ?? [];
-
   const firstName = data.user?.full_name?.trim().split(/\s+/)[0];
 
   return (
@@ -317,10 +323,6 @@ export default function DashboardOverview() {
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden items-center gap-1.5 rounded-full border border-border/80 px-3 py-1.5 text-xs text-muted-foreground sm:flex">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
-              Workspace
-            </span>
 
             <Button
               type="button"
@@ -334,6 +336,8 @@ export default function DashboardOverview() {
                 className={`size-4 ${refreshing ? "animate-spin" : ""}`}
               />
             </Button>
+
+            <NotificationBell />
 
             <Button
               type="button"
@@ -363,7 +367,7 @@ export default function DashboardOverview() {
               <span className="max-w-32 truncate text-sm font-medium">
                 {data.user?.full_name ?? "Account"}
               </span>
-              <ChevronDown className="size-3.5 text-muted-foreground" />
+              {/* <ChevronDown className="size-3.5 text-muted-foreground" /> */}
             </div>
           </div>
         </header>
@@ -473,7 +477,7 @@ export default function DashboardOverview() {
             <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-5">
               <StatCard
                 label="Total tasks"
-                value={loading ? null : data.tasks.length}
+                value={loading || tasksUnavailable ? null : data.tasks.length}
                 description="All tasks in your workspace"
                 icon={ListTodo}
                 accent="bg-primary/10 text-primary"
@@ -481,7 +485,7 @@ export default function DashboardOverview() {
 
               <StatCard
                 label="Active tasks"
-                value={loading ? null : activeTasks}
+                value={loading || tasksUnavailable? null : activeTasks}
                 description="Tasks currently marked active"
                 icon={Activity}
                 accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -489,7 +493,11 @@ export default function DashboardOverview() {
 
               <StatCard
                 label="Successful runs"
-                value={data.summary?.successful_count ?? null}
+                value={
+                  summaryUnavailable
+                    ? null
+                    : data.summary?.successful_count ?? null
+                }
                 description={`Completed successfully · last ${data.summary?.window_days ?? 30} days`}
                 icon={CheckCircle2}
                 accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -497,7 +505,7 @@ export default function DashboardOverview() {
 
               <StatCard
                 label="Failed or timed out"
-                value={failedRuns}
+                value={summaryUnavailable ? null : failedRuns}
                 description={`Unsuccessful completed runs · last ${data.summary?.window_days ?? 30} days`}
                 icon={AlertCircle}
                 accent="bg-amber-500/10 text-amber-600 dark:text-amber-400"
@@ -505,7 +513,7 @@ export default function DashboardOverview() {
 
               <StatCard
                 label="Success rate"
-                value={data.summary ? Math.round(data.summary.success_rate) : null}
+                value={!summaryUnavailable && data.summary ? Math.round(data.summary.success_rate) : null}
                 description={`Completed runs · last ${data.summary?.window_days ?? 30} days`}
                 icon={CheckCircle2}
                 accent="bg-sky-500/10 text-sky-600 dark:text-sky-400"
@@ -574,8 +582,9 @@ export default function DashboardOverview() {
 
               <div className="flex items-center justify-between border-t border-border/70 bg-muted/20 px-5 py-3.5 sm:px-6">
                 <span className="text-xs text-muted-foreground">
-                  {data.tasks.length} task{data.tasks.length === 1 ? "" : "s"}{" "}
-                  total
+                  {tasksUnavailable
+                    ? "Task count unavailable"
+                    : `${data.tasks.length} task${data.tasks.length === 1 ? "" : "s"} total`}
                 </span>
                 <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <Clock3 className="size-3.5" />

@@ -11,6 +11,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/health"
 	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/middleware"
+	"github.com/Saif724/STAQ/backend/internal/notifications"
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/tasksetups"
@@ -34,6 +35,7 @@ func New(
 	triggersHandler *triggers.Handler,
 	actionsHandler *actions.Handler,
 	executionHandler *executions.Handler,
+	notificationsHandler *notifications.Handler,
 	logg zerolog.Logger,
 	frontendURL string,
 ) http.Handler {
@@ -250,6 +252,19 @@ func New(
 		middleware.Auth(jwtManager)(
 			http.HandlerFunc(executionHandler.ListLogs),
 		),
+	)
+
+	mux.Handle(
+		"GET /notifications",
+		middleware.Auth(jwtManager)(http.HandlerFunc(notificationsHandler.List)),
+	)
+	mux.Handle(
+		"POST /notifications/read-all",
+		middleware.Auth(jwtManager)(http.HandlerFunc(notificationsHandler.MarkAllRead)),
+	)
+	mux.Handle(
+		"POST /notifications/{id}/read",
+		middleware.Auth(jwtManager)(http.HandlerFunc(notificationsHandler.MarkRead)),
 	)
 
 	return middleware.Chain(

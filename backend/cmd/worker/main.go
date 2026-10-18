@@ -15,6 +15,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/executions"
 	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/logger"
+	"github.com/Saif724/STAQ/backend/internal/notifications"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
 	"github.com/Saif724/STAQ/backend/internal/workers"
 	"github.com/Saif724/STAQ/backend/pkg/email"
@@ -92,8 +93,10 @@ func main() {
 		cfg.Google.ClientSecret,
 		cfg.Email.GmailRefreshToken,
 	)
+	notificationsRepository := notifications.NewRepository(db)
+	notificationsService := notifications.NewService(notificationsRepository)
 
-	registry := workers.NewRegistry(emailSender, gmailIntegrationService)
+	registry := workers.NewRegistry(emailSender, gmailIntegrationService, notificationsService)
 	worker := workers.New(
 		redisClient,
 		tasksRepository,

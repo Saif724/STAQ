@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, CheckCircle2, ExternalLink, Link2, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 
 import Sidebar from "@/components/dashboard/sidebar";
+import NotificationBell from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
 import { deleteConnection, getConnections, getGmailAuthorizationUrl, type Connection } from "@/lib/api/connections";
@@ -147,7 +148,10 @@ export default function ConnectionsPage() {
             <button type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted lg:hidden"><Link2 className="size-4" /></button>
             <div><p className="text-sm font-semibold">Connections</p><p className="text-xs text-muted-foreground">External accounts used by your automations</p></div>
           </div>
-          <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setRefreshVersion((version) => version + 1)} className="gap-2"><RefreshCw className="size-3.5" />Refresh</Button>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setRefreshVersion((version) => version + 1)} className="gap-2"><RefreshCw className="size-3.5" />Refresh</Button>
+          </div>
         </header>
 
         <div className="mx-auto w-full max-w-375 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">

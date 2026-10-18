@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import {
   Activity,
+  Bell,
   LayoutDashboard,
   Link2,
   ListTodo,
@@ -21,7 +22,13 @@ type SidebarProps = {
   user: CurrentUser | null;
   onLogout: () => void;
   loggingOut: boolean;
-  activePage: "overview" | "tasks" | "executions" | "connections" | "settings";
+  activePage:
+    | "overview"
+    | "tasks"
+    | "executions"
+    | "connections"
+    | "settings"
+    | "notifications";
 };
 
 function getInitials(name: string) {
@@ -46,11 +53,42 @@ export default function Sidebar({
   const router = useRouter();
 
   const navigation = [
-    { label: "Overview", path: "/dashboard", icon: LayoutDashboard, key: "overview" },
-    { label: "Tasks", path: "/tasks", icon: ListTodo, key: "tasks" },
-    { label: "Executions", path: "/executions", icon: Activity, key: "executions" },
-    { label: "Connections", path: "/dashboard/connections", icon: Link2, key: "connections" },
-    { label: "Settings", path: "/settings", icon: Settings2, key: "settings" },
+    {
+      label: "Overview",
+      path: "/dashboard",
+      icon: LayoutDashboard,
+      key: "overview",
+    },
+    {
+      label: "Tasks",
+      path: "/tasks",
+      icon: ListTodo,
+      key: "tasks",
+    },
+    {
+      label: "Executions",
+      path: "/executions",
+      icon: Activity,
+      key: "executions",
+    },
+    {
+      label: "Connections",
+      path: "/dashboard/connections",
+      icon: Link2,
+      key: "connections",
+    },
+    {
+      label: "Notifications",
+      path: "/notifications",
+      icon: Bell,
+      key: "notifications",
+    },
+    {
+      label: "Settings",
+      path: "/settings",
+      icon: Settings2,
+      key: "settings",
+    },
   ] as const;
 
   return (

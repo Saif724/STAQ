@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, RefreshCw, Save, ShieldCheck } from "lucide-react";
 
 import Sidebar from "@/components/dashboard/sidebar";
+import NotificationBell from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
 import { getCurrentUser, updateCurrentUser, type CurrentUser } from "@/lib/api/dashboard";
@@ -115,7 +116,10 @@ export default function SettingsPage() {
             <button type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)} className="rounded-lg border border-border p-2 text-muted-foreground hover:bg-muted lg:hidden"><ShieldCheck className="size-4" /></button>
             <div><p className="text-sm font-semibold">Settings</p><p className="text-xs text-muted-foreground">Profile and scheduling preference</p></div>
           </div>
-          <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setRefreshVersion((version) => version + 1)} className="gap-2"><RefreshCw className="size-3.5" />Refresh</Button>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => setRefreshVersion((version) => version + 1)} className="gap-2"><RefreshCw className="size-3.5" />Refresh</Button>
+          </div>
         </header>
 
         <div className="mx-auto w-full max-w-360 px-4 py-7 sm:px-6 sm:py-9 lg:px-9">

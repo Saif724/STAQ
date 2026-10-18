@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 
 import Sidebar from "@/components/dashboard/sidebar";
+import NotificationBell from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
 import {
@@ -384,6 +385,7 @@ export default function TasksPage() {
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
+            <NotificationBell />
             <Button
               type="button"
               variant="outline"

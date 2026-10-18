@@ -3,9 +3,10 @@ package actions
 import "context"
 
 type ExecutionContext struct {
-	TaskID   string
-	ActionID string
-	UserID   string
+	TaskID      string
+	ExecutionID string
+	ActionID    string
+	UserID      string
 }
 
 type ExecutionResult struct {

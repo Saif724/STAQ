@@ -24,6 +24,7 @@ import (
 	"github.com/Saif724/STAQ/backend/internal/health"
 	emailIntegration "github.com/Saif724/STAQ/backend/internal/integrations/email"
 	"github.com/Saif724/STAQ/backend/internal/logger"
+	"github.com/Saif724/STAQ/backend/internal/notifications"
 	"github.com/Saif724/STAQ/backend/internal/queues"
 	"github.com/Saif724/STAQ/backend/internal/router"
 	"github.com/Saif724/STAQ/backend/internal/tasks"
@@ -173,11 +174,15 @@ func main() {
 	executionsService := executions.NewService(executionsRepository)
 	executionsHandler := executions.NewHandler(executionsService)
 
+	notificationsRepository := notifications.NewRepository(db)
+	notificationsService := notifications.NewService(notificationsRepository)
+	notificationsHandler := notifications.NewHandler(notificationsService)
+
 	actionRegistry := actions.NewRegistry()
 
 	actionRegistry.Register(
 		actions.TypeReminder,
-		reminderAction.NewExecutor(),
+		reminderAction.NewExecutor(notificationsService),
 	)
 
 	actionRegistry.Register(
@@ -218,6 +223,7 @@ func main() {
 		triggersHandler,
 		actionsHandler,
 		executionsHandler,
+		notificationsHandler,
 		logg,
 		cfg.App.FrontendURL,
 	)

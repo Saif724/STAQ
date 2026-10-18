@@ -62,12 +62,13 @@ func New(
 func NewRegistry(
 	platformEmailSender emailAction.PlatformSender,
 	gmailIntegrationService emailAction.UserSender,
+	reminderNotifier reminder.Notifier,
 ) *actions.Registry {
 	registry := actions.NewRegistry()
 
 	registry.Register(
 		actions.TypeReminder,
-		reminder.NewExecutor(),
+		reminder.NewExecutor(reminderNotifier),
 	)
 
 	registry.Register(
@@ -439,9 +440,10 @@ func (w *Worker) executeActions(
 
 	for _, action := range actionsList {
 		actionContext := actions.ExecutionContext{
-			TaskID:   task.ID,
-			ActionID: action.ID,
-			UserID:   task.UserID,
+			TaskID:      task.ID,
+			ExecutionID: execution.ID,
+			ActionID:    action.ID,
+			UserID:      task.UserID,
 		}
 
 		executor, err := w.registry.Get(action.ActionType)

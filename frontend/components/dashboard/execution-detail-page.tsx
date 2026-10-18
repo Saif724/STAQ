@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import Sidebar from "@/components/dashboard/sidebar";
+import NotificationBell from "@/components/notifications/notification-bell";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api/client";
 import {
@@ -240,19 +241,22 @@ export default function ExecutionDetailPage() {
             </div>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loading || refreshing}
-            onClick={refresh}
-            className="shrink-0 gap-2"
-          >
-            <RefreshCw
-              className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
-            />
-            <span>Refresh</span>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <NotificationBell />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading || refreshing}
+              onClick={refresh}
+              className="shrink-0 gap-2"
+            >
+              <RefreshCw
+                className={`size-3.5 ${refreshing ? "animate-spin" : ""}`}
+              />
+              <span>Refresh</span>
+            </Button>
+          </div>
         </header>
 
         <div className="mx-auto w-full min-w-0 max-w-375 px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
