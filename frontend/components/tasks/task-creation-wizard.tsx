@@ -702,7 +702,7 @@ export default function TaskCreationWizard({
         action.id === id ? { ...action, ...patch } : action,
       ),
     );
-}
+  }
 
   function validateStep(index: number): string | null {
     if (index === 0) {
@@ -733,7 +733,7 @@ export default function TaskCreationWizard({
 
       if (!startAt) return "Choose a valid time and IANA time zone.";
 
-      if (triggerType === "ONCE" && startAt.getTime() <= Date.now()) {
+      if (triggerType === "ONCE" && !task && startAt.getTime() <= Date.now()) {
         return "A one-time trigger must be scheduled in the future.";
       }
 

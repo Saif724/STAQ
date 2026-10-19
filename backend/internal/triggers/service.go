@@ -137,7 +137,7 @@ func (s *Service) PrepareCreateForTask(
 		TriggerType:    triggerType,
 		CronExpression: cronExpression,
 		TimeZone:       timezone,
-		StartAt:        startAt,
+		StartAt:        startAt.UTC(),
 		NextRunAt:      nextRunAt.UTC(),
 		LastRunAt:      nil,
 		IsActive:       true,
@@ -255,14 +255,17 @@ func (s *Service) Update(
 		return nil, err
 	}
 
-	nextRunAt, err := calculateFirstRun(
-		triggerType,
-		cronExpression,
-		startAt,
-		location,
-	)
-	if err != nil {
-		return nil, err
+	scheduleChanged := existing.TriggerType != triggerType ||
+		!equalStringPtr(existing.CronExpression, cronExpression) ||
+		existing.TimeZone != timezone ||
+		!existing.StartAt.Equal(startAt)
+
+	nextRunAt := existing.NextRunAt
+	if scheduleChanged {
+		nextRunAt, err = calculateFirstRun(triggerType, cronExpression, startAt, location)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	now := time.Now().UTC()
@@ -273,7 +276,7 @@ func (s *Service) Update(
 		TriggerType:    triggerType,
 		CronExpression: cronExpression,
 		TimeZone:       timezone,
-		StartAt:        startAt,
+		StartAt:        startAt.UTC(),
 		NextRunAt:      nextRunAt.UTC(),
 		LastRunAt:      existing.LastRunAt,
 		IsActive:       input.IsActive,
@@ -375,6 +378,13 @@ func isValidTriggerType(triggerType string) bool {
 	default:
 		return false
 	}
+}
+
+func equalStringPtr(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func validateSchedule(
