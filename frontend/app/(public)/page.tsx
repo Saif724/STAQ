@@ -6,7 +6,6 @@ import {
   GitBranch,
   Mail,
   Play,
-  ShieldCheck,
   Terminal,
   Webhook,
   Zap,
@@ -333,7 +332,7 @@ export default function HomePage() {
           </div>
 
           <div className="mt-12 grid gap-4 md:grid-cols-3">
-            {workflowSteps.map((step, index) => {
+            {workflowSteps.map((step) => {
               const Icon = step.icon;
 
               return (
@@ -343,7 +342,7 @@ export default function HomePage() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-primary">
-                      {step.number}
+                      Step {step.number}
                     </span>
                     <Icon className="size-5 text-primary" />
                   </div>
@@ -351,10 +350,6 @@ export default function HomePage() {
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
                     {step.description}
                   </p>
-
-                  {index < workflowSteps.length - 1 && (
-                    <ArrowRight className="absolute -right-3 top-1/2 z-10 hidden size-6 -translate-y-1/2 rounded-full border border-border bg-background p-1 text-muted-foreground md:block" />
-                  )}
                 </div>
               );
             })}
